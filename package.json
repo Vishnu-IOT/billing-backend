@@ -1,0 +1,23 @@
+{
+  "name": "billing-backend",
+  "version": "1.0.0",
+  "description": "backend for billing software",
+  "license": "ISC",
+  "author": "vishnu",
+  "type": "commonjs",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "cors": "^2.8.6",
+    "dotenv": "^17.3.1",
+    "express": "^5.2.1",
+    "express-validator": "^7.3.1",
+    "helmet": "^8.1.0",
+    "mongoose": "^9.2.4",
+    "mysql2": "^3.19.1",
+    "pdfkit": "^0.17.2",
+    "sequelize": "^6.37.8"
+  }
+}
