@@ -3,6 +3,9 @@ const SalesItem = require('../mysql-models/Sales-Items');
 const Sale = require('../mysql-models/SalesBill');
 const Product = require('../mysql-models/Product');
 const Party = require('../mysql-models/Party');
+const { Op, Sequelize } = require('sequelize');
+const Customer = require('../mysql-models/Customer');
+const User = require('../mysql-models/Users');
 
 // @desc    Get all invoices
 // @route   GET /api/invoices
@@ -10,31 +13,139 @@ const Party = require('../mysql-models/Party');
 const getInvoices = async (req, res) => {
   try {
     const invoices = await Sale.findAll({
-  attributes: [
-    'saleDate',
-    'id',
-    'partyId',
-    'invoiceNumber',
-    'totalAmount',
-    'paymentStatus',
-    [sequelize.literal(`'Sale'`), 'type'],
-  ],
-  include: [
-    {
-      model: Party,
-      attributes: ['name'],
-    },
-    {
-      model: SalesItem,
+      attributes: [
+        'saleDate',
+        'id',
+        'partyId',
+        'invoiceNumber',
+        'totalAmount',
+        'paymentStatus',
+        'bill_type',
+        'po_number',
+        'eway_bill',
+        'global_discount_percentage',
+        'global_discount_amount',
+        [sequelize.literal(`'Sale'`), 'type'],
+      ],
       include: [
         {
-          model: Product,
+          model: Party,
           attributes: ['name'],
         },
+        {
+          model: Customer,
+          attributes: ['name'],
+        },
+        {
+          model: User,
+          attributes: ['id', 'name'],
+        },
+        {
+          model: SalesItem,
+          include: [
+            {
+              model: Product,
+              attributes: ['name', 'HSNCode'],
+            },
+          ],
+        },
       ],
-    },
-  ],
-});
+    });
+
+    res.status(200).json(invoices);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// @desc    Get all invoices
+// @route   GET /api/invoices
+// @access  Public
+const getInvoicesByDate = async (req, res) => {
+  try {
+    const { filter, startDate, endDate } = req.query;
+
+    let whereClause = {};
+    const now = new Date();
+
+    if (startDate && endDate) {
+      whereClause.saleDate = {
+        [Op.between]: [new Date(startDate), new Date(endDate)],
+      };
+    } else if (filter === 'thisMonth') {
+      const start = new Date(now.getFullYear(), now.getMonth(), 1);
+      const end = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+
+      whereClause.saleDate = {
+        [Op.gte]: start,
+        [Op.lt]: end,
+      };
+    } else if (filter === 'thisYear') {
+      const start = new Date(now.getFullYear(), 0, 1);
+
+      whereClause.saleDate = {
+        [Op.gte]: start,
+      };
+    } else if (filter === 'lastYear') {
+      const start = new Date(now.getFullYear() - 1, 0, 1);
+      const end = new Date(now.getFullYear(), 0, 1);
+
+      whereClause.saleDate = {
+        [Op.gte]: start,
+        [Op.lt]: end,
+      };
+    } else {
+      const start = new Date(now.getFullYear(), now.getMonth(), 1);
+      const end = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+
+      whereClause.saleDate = {
+        [Op.gte]: start,
+        [Op.lt]: end,
+      };
+    }
+
+    const invoices = await Sale.findAll({
+      where: whereClause, // ✅ ADD THIS
+      attributes: [
+        'saleDate',
+        'id',
+        'partyId',
+        'tax',
+        'baseRate',
+        'invoiceNumber',
+        'totalAmount',
+        'paymentStatus',
+        'bill_type',
+        'po_number',
+        'eway_bill',
+        'global_discount_percentage',
+        'global_discount_amount',
+        [sequelize.literal(`'Sale'`), 'type'],
+      ],
+      include: [
+        {
+          model: Party,
+          attributes: ['name'],
+        },
+        {
+          model: Customer,
+          attributes: ['name'],
+        },
+        {
+          model: User,
+          attributes: ['id', 'name'],
+        },
+        {
+          model: SalesItem,
+          include: [
+            {
+              model: Product,
+              attributes: ['name', 'HSNCode'],
+            },
+          ],
+        },
+      ],
+    });
 
     res.status(200).json(invoices);
   } catch (error) {
@@ -47,7 +158,7 @@ const getInvoices = async (req, res) => {
 // @access  Public
 const getInvoiceById = async (req, res) => {
   try {
-    const invoice = await Sale.findById(req.params.id)
+    const invoice = await Sale.findByPk(req.params.id)
       .populate('customer', 'name email phone address')
       .populate('items.product', 'name description');
 
@@ -60,15 +171,107 @@ const getInvoiceById = async (req, res) => {
   }
 };
 
+// @desc    Create new Customer and loyalty points
+const handleB2CCustomer = async ({ phone, name, totalAmount, transaction }) => {
+  if (!phone) {
+    return null;
+  }
+
+  // Loyalty calculation
+  // Example:
+  // 1 point for every ₹100
+  const loyaltyPoints = Math.floor(totalAmount / 100);
+
+  // Check existing customer
+  let customer = await Customer.findOne({
+    where: {
+      phone,
+    },
+    transaction,
+  });
+
+  // If customer not exists → create
+  if (!customer) {
+    customer = await Customer.create(
+      {
+        name: name || 'Walk-in Customer',
+        phone,
+        loyalty_points: loyaltyPoints,
+      },
+      { transaction }
+    );
+
+    return customer;
+  }
+
+  // Existing customer → update loyalty points
+  await Customer.update(
+    {
+      loyalty_points: (customer.loyalty_points || 0) + loyaltyPoints,
+    },
+    {
+      where: { id: customer.id },
+      transaction,
+    }
+  );
+
+  return customer;
+};
+
 // @desc    Create new invoice
 // @route   POST /api/invoices
 // @access  Public
+const getCurrentFY = () => {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = now.getMonth(); // April = 3
+  const startYear = m >= 3 ? y : y - 1;
+  // return `${startYear}-${startYear + 1}`;
+  return `${startYear}`;
+};
+
+const getFYShort = (fyYear) => {
+  const [start, end] = fyYear.split('-');
+  // return `${String(start).slice(-2)}/${String(end).slice(-2)}`;
+  return `${String(start)}`;
+  // '2025-2026' → '25/26'
+};
+
+const buildInvoiceNumber = (fyYear, seq) => {
+  return `INV-${getFYShort(fyYear)}-${String(seq).padStart(4, '0')}`;
+  // → INV-25/26-0003
+};
+
+// ─── Atomic invoice number from Sales table (no counter table) ────────────
+const generateInvoiceNumber = async (transaction) => {
+  const fyYear = getCurrentFY();
+  const fyShortPattern = `INV-${getFYShort(fyYear)}-%`;
+
+  // Count existing bills for this FY — lock rows to block concurrent reads
+  const count = await Sale.count({
+    where: {
+      invoiceNumber: { [Op.like]: fyShortPattern },
+    },
+    transaction,
+    lock: transaction.LOCK.UPDATE,
+  });
+
+  const nextSeq = count + 1;
+  const billNumber = buildInvoiceNumber(fyYear, nextSeq);
+
+  return { billNumber, fyYear };
+};
+
 const createInvoice = async (req, res) => {
-  const transaction = await sequelize.transaction();
+  const transaction = await sequelize.transaction({
+    isolationLevel: Sequelize.Transaction.ISOLATION_LEVELS.SERIALIZABLE,
+  });
   try {
     const {
-      invoiceNumber,
+      name,
+      phone,
       partyId,
+      userId,
       global_discount_percentage = 0,
       global_discount_amount = 0,
       baseRate,
@@ -76,17 +279,36 @@ const createInvoice = async (req, res) => {
       totalAmount,
       paymentStatus,
       saleDate,
+      po_number,
+      eway_bill,
+      bill_type,
       items,
     } = req.body;
 
     if (!items || items.length === 0) {
+      await transaction.rollback();
       return res.status(400).json({ message: 'No invoice items' });
     }
 
+    let customerId = null;
+    if (bill_type === 'B2C') {
+      const customer = await handleB2CCustomer({
+        name,
+        phone,
+        totalAmount,
+        transaction,
+      });
+      customerId = customer?.id || null;
+    }
+
+    const { billNumber, fyYear } = await generateInvoiceNumber(transaction);
+
     const invoice = await Sale.create(
       {
-        invoiceNumber,
+        invoiceNumber: billNumber,
         partyId,
+        customerId,
+        userId,
         global_discount_percentage,
         global_discount_amount,
         baseRate,
@@ -94,9 +316,14 @@ const createInvoice = async (req, res) => {
         totalAmount,
         paymentStatus,
         saleDate,
+        po_number,
+        eway_bill,
+        bill_type,
       },
-      { transaction },
-      { include: Party }
+      {
+        transaction,
+        include: Party,
+      }
     );
 
     // Calculate subtotal and validate items
@@ -124,15 +351,14 @@ const createInvoice = async (req, res) => {
 
       // subtotal += total;
 
-      await Product.update(
-        {
-          stockQuantity: product.stockQuantity - item.quantity,
+      await Product.decrement('stockQuantity', {
+        by: item.quantity,
+        where: {
+          id: item.productId,
+          stockQuantity: { [Op.gte]: item.quantity }, // guard: won't go negative
         },
-        {
-          where: { id: item.productId },
-        },
-        { transaction }
-      );
+        transaction,
+      });
 
       processedItems.push({
         saleId: saleId,
@@ -145,7 +371,7 @@ const createInvoice = async (req, res) => {
         baseRate: item.baseRate,
         taxPercentage: item.taxPercentage,
         taxAmount: item.taxAmount,
-        netRate: item.netrate,
+        netRate: item.netRate,
       });
     }
 
@@ -153,10 +379,8 @@ const createInvoice = async (req, res) => {
     await SalesItem.bulkCreate(processedItems, { transaction });
 
     // const calculatedTotalAmount = subtotal + tax - discount;
-
-    res.status(201).json(invoice);
-
     await transaction.commit();
+    res.status(201).json(invoice);
   } catch (error) {
     await transaction.rollback();
 
@@ -176,6 +400,8 @@ const updateInvoiceById = async (req, res) => {
     const {
       invoiceNumber,
       partyId,
+      userId,
+      customerId,
       global_discount_percentage = 0,
       global_discount_amount = 0,
       baseRate,
@@ -183,6 +409,9 @@ const updateInvoiceById = async (req, res) => {
       totalAmount,
       paymentStatus,
       saleDate,
+      po_number,
+      eway_bill,
+      bill_type,
       items,
     } = req.body;
 
@@ -266,12 +495,17 @@ const updateInvoiceById = async (req, res) => {
       {
         invoiceNumber,
         partyId,
+        userId,
+        customerId,
         global_discount_percentage,
         global_discount_amount,
         baseRate,
         tax,
         totalAmount,
         paymentStatus,
+        po_number,
+        eway_bill,
+        bill_type,
         saleDate,
       },
       { transaction }
@@ -286,6 +520,35 @@ const updateInvoiceById = async (req, res) => {
   }
 };
 
+// @access  Public
+// @desc    Update invoice
+// @route   PUT /api/invoices/:id
+const updatePaymentStatusById = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { paymentStatus } = req.body;
+
+    if (!paymentStatus) {
+      return res.status(404).json({ message: 'Status not found' });
+    }
+
+    const invoice = await Sale.findByPk(id);
+
+    if (!invoice) {
+      return res.status(404).json({ message: 'Invoice not found' });
+    }
+
+    // 5️⃣ Update invoice
+    await invoice.update({
+      paymentStatus,
+    });
+
+    res.status(200).json({ message: 'Payment In updated successfully' });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 // @desc    Create new invoice
 // @route   POST /api/invoices
 // @access  Public
@@ -293,7 +556,7 @@ const deleteInvoice = async (req, res) => {
   const transaction = await sequelize.transaction();
 
   try {
-    const { id } = req.body;
+    const id = req.params.id;
 
     const salesInvoice = await Sale.findByPk(id, { transaction });
 
@@ -353,138 +616,12 @@ const deleteInvoice = async (req, res) => {
   }
 };
 
-// @desc    Update invoice status
-// @route   PUT /api/invoices/:id/status
-// @access  Public
-const updateInvoiceStatus = async (req, res) => {
-  try {
-    const { status } = req.body;
-
-    if (!['Paid', 'Unpaid', 'Overdue', 'Cancelled'].includes(status)) {
-      return res.status(400).json({ message: 'Invalid status' });
-    }
-
-    const invoice = await Sale.findById(req.params.id);
-
-    if (!invoice) {
-      return res.status(404).json({ message: 'Invoice not found' });
-    }
-
-    invoice.status = status;
-    const updatedInvoice = await invoice.save();
-
-    res.status(200).json(updatedInvoice);
-  } catch (error) {
-    res.status(400).json({ message: error.message });
-  }
-};
-
-// POST /api/invoices
-// @desc    Create invoice status
-// @route   POST /api/invoices/:id/status
-// @access  Public
-const createInvoices = async (req, res, next) => {
-  // const connection = await pool.getConnection();
-  try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ success: false, errors: errors.array() });
-    }
-
-    await connection.beginTransaction();
-
-    const {
-      client_id,
-      issue_date,
-      due_date,
-      items,
-      tax_rate = 0,
-      discount = 0,
-      notes,
-      status = 'draft',
-    } = req.body;
-
-    // Verify client belongs to user
-    const [clientRows] = await connection.query(
-      'SELECT * FROM clients WHERE id = ? AND user_id = ?',
-      [client_id, req.user.id]
-    );
-    if (!clientRows.length) {
-      return res
-        .status(404)
-        .json({ success: false, message: 'Client not found' });
-    }
-
-    // Calculate totals
-    const subtotal = items.reduce(
-      (sum, item) => sum + item.quantity * item.unit_price,
-      0
-    );
-    const tax_amount = (subtotal - discount) * (tax_rate / 100);
-    const total = subtotal - discount + tax_amount;
-    const invoice_number = generateInvoiceNumber();
-
-    const [invoiceResult] = await connection.query(
-      `INSERT INTO invoices (invoice_number, user_id, client_id, status, issue_date, due_date,
-        subtotal, tax_rate, tax_amount, discount, total, notes)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        invoice_number,
-        req.user.id,
-        client_id,
-        status,
-        issue_date,
-        due_date,
-        subtotal,
-        tax_rate,
-        tax_amount,
-        discount,
-        total,
-        notes,
-      ]
-    );
-
-    const invoiceId = invoiceResult.insertId;
-
-    // Insert items
-    for (const item of items) {
-      const amount = item.quantity * item.unit_price;
-      await connection.query(
-        'INSERT INTO invoice_items (invoice_id, description, quantity, unit_price, amount) VALUES (?, ?, ?, ?, ?)',
-        [invoiceId, item.description, item.quantity, item.unit_price, amount]
-      );
-    }
-
-    await connection.commit();
-
-    const [newInvoice] = await pool.query(
-      'SELECT * FROM invoices WHERE id = ?',
-      [invoiceId]
-    );
-    const [newItems] = await pool.query(
-      'SELECT * FROM invoice_items WHERE invoice_id = ?',
-      [invoiceId]
-    );
-
-    res.status(201).json({
-      success: true,
-      message: 'Invoice created successfully',
-      data: { ...newInvoice[0], items: newItems },
-    });
-  } catch (error) {
-    await connection.rollback();
-    next(error);
-  } finally {
-    connection.release();
-  }
-};
-
 module.exports = {
   getInvoices,
+  getInvoicesByDate,
   getInvoiceById,
+  updatePaymentStatusById,
   createInvoice,
-  updateInvoiceStatus,
-  createInvoices,
   deleteInvoice,
   updateInvoiceById,
 };

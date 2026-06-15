@@ -17,10 +17,10 @@ const {
   deleteCustomer,
 } = require('../mysql-controllers/customerController');
 
-router.post('/add-Party', createCustomer);
-router.get('/get-Party', getCustomers);
-router.delete('/delete-Party', deleteCustomer);
-router.post('/update-Party', updateCustomer);
+router.post('/add-Cusotmer', createCustomer);
+router.get('/get-Cusotmer', getCustomers);
+router.delete('/delete-Cusotmer', deleteCustomer);
+router.post('/update-Cusotmer', updateCustomer);
 router
   .route('/:id')
   .get(getCustomerById)

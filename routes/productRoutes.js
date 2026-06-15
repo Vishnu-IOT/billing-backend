@@ -14,6 +14,7 @@ const {
   createProduct,
   updateProduct,
   deleteProduct,
+  updateStockBulk,
 } = require('../mysql-controllers/productController');
 
 // router.route('/').get(getProducts).post(createProduct);
@@ -21,6 +22,7 @@ router.post('/add-Products', createProduct);
 router.get('/get-Products', getProducts);
 router.delete('/delete-Products/:id', deleteProduct);
 router.post('/update-Products/:id', updateProduct);
+router.post('/updatebulk-Products', updateStockBulk);
 
 // router
 //   .route('/:id')

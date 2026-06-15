@@ -21,6 +21,11 @@ const Product = sequelize.define(
       allowNull: true,
     },
 
+    barcode: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
+
     MRP: {
       type: DataTypes.FLOAT,
       allowNull: false,

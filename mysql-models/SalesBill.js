@@ -16,11 +16,39 @@ const Sale = sequelize.define(
       allowNull: false,
     },
 
+    po_number: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
+
+    eway_bill: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
+
     partyId: {
       type: DataTypes.INTEGER,
-      allowNull: false,
+      allowNull: true,
       references: {
         model: 'parties',
+        key: 'id',
+      },
+    },
+
+    customerId: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      references: {
+        model: 'customers',
+        key: 'id',
+      },
+    },
+
+    userId: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      references: {
+        model: 'users',
         key: 'id',
       },
     },
@@ -57,6 +85,12 @@ const Sale = sequelize.define(
     paymentStatus: {
       type: DataTypes.ENUM('Paid', 'Unpaid', 'Overdue', 'Cancelled'),
       defaultValue: 'Unpaid',
+    },
+
+    bill_type: {
+      type: DataTypes.ENUM('B2C', 'B2B'),
+      allowNull: false,
+      defaultValue: 'B2C',
     },
 
     saleDate: {

@@ -4,11 +4,17 @@ const Customer = require('../mysql-models/Customer');
 // @route   GET /api/customers
 const getCustomers = async (req, res) => {
   try {
-    const customers = await Customer.findAll();
+    const customers = await Customer.findAll({
+      attributes: ['id', 'name', 'phone', 'loyalty_points'],
+    });
 
-    res.status(200).json(customers);
+    res.status(200).json({
+      success: true,
+      message: 'Customers fetched successfully',
+      data: customers,
+    });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    res.status(500).json({ success: false, message: error.message });
   }
 };
 
@@ -32,11 +38,10 @@ const getCustomerById = async (req, res) => {
 // @route   POST /api/customers
 const createCustomer = async (req, res) => {
   try {
-    const { name, GST, email, phone, address } = req.body;
-    console.log(name, GST);
+    const { name, phone, loyalty_points } = req.body;
 
     const customerExists = await Customer.findOne({
-      where: { email },
+      where: { phone },
     });
 
     if (customerExists) {
@@ -45,10 +50,8 @@ const createCustomer = async (req, res) => {
 
     const customer = await Customer.create({
       name,
-      GST,
-      email,
       phone,
-      address,
+      loyalty_points,
     });
 
     res.status(201).json(customer);

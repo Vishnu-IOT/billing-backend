@@ -3,6 +3,7 @@ const PurchaseItem = require('../mysql-models/Purchase-Items');
 const Purchase = require('../mysql-models/PurchaseBill');
 const Product = require('../mysql-models/Product');
 const Party = require('../mysql-models/Party');
+const { Op } = require('sequelize');
 
 // @desc    Get all invoices
 // @route   GET /api/invoices
@@ -20,7 +21,89 @@ const getPurchase = async (req, res) => {
           include: [
             {
               model: Product,
-              attributes: ['name'],
+              attributes: ['name', 'HSNCode'],
+            },
+          ],
+        },
+      ],
+    });
+
+    res.status(200).json(invoices);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// @desc    Get all invoices
+// @route   GET /api/invoices
+// @access  Public
+const getPurchaseInvoicesByDate = async (req, res) => {
+  try {
+    const { filter, startDate, endDate } = req.query;
+
+    let whereClause = {};
+    const now = new Date();
+
+    if (startDate && endDate) {
+      whereClause.purchaseDate = {
+        [Op.between]: [new Date(startDate), new Date(endDate)],
+      };
+    } else if (filter === 'thisMonth') {
+      const start = new Date(now.getFullYear(), now.getMonth(), 1);
+      const end = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+
+      whereClause.purchaseDate = {
+        [Op.gte]: start,
+        [Op.lt]: end,
+      };
+    } else if (filter === 'thisYear') {
+      const start = new Date(now.getFullYear(), 0, 1);
+
+      whereClause.purchaseDate = {
+        [Op.gte]: start,
+      };
+    } else if (filter === 'lastYear') {
+      const start = new Date(now.getFullYear() - 1, 0, 1);
+      const end = new Date(now.getFullYear(), 0, 1);
+
+      whereClause.purchaseDate = {
+        [Op.gte]: start,
+        [Op.lt]: end,
+      };
+    } else {
+      const start = new Date(now.getFullYear(), now.getMonth(), 1);
+      const end = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+
+      whereClause.purchaseDate = {
+        [Op.gte]: start,
+        [Op.lt]: end,
+      };
+    }
+
+    const invoices = await Purchase.findAll({
+      where: whereClause, // ✅ ADD THIS
+      attributes: [
+        'purchaseDate',
+        'id',
+        'partyId',
+        'tax',
+        'baseRate',
+        'invoiceNumber',
+        'totalAmount',
+        'paymentStatus',
+        [sequelize.literal(`'Purchase'`), 'type'],
+      ],
+      include: [
+        {
+          model: Party,
+          attributes: ['name'],
+        },
+        {
+          model: PurchaseItem,
+          include: [
+            {
+              model: Product,
+              attributes: ['name', 'HSNCode'],
             },
           ],
         },
@@ -46,6 +129,35 @@ const getPurchaseById = async (req, res) => {
       return res.status(404).json({ message: 'Invoice not found' });
     }
     res.status(200).json(invoice);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// @access  Public
+// @desc    Update invoice
+// @route   PUT /api/invoices/:id
+const updatePaymentStatusById = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { paymentStatus } = req.body;
+
+    if (!paymentStatus) {
+      return res.status(404).json({ message: 'Status not found' });
+    }
+
+    const invoice = await Purchase.findByPk(id);
+
+    if (!invoice) {
+      return res.status(404).json({ message: 'Invoice not found' });
+    }
+
+    // 5️⃣ Update invoice
+    await invoice.update({
+      paymentStatus,
+    });
+
+    res.status(200).json({ message: 'Payment Out updated successfully' });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -137,7 +249,7 @@ const createPurchase = async (req, res) => {
         baseRate: item.baseRate,
         taxPercentage: item.taxPercentage,
         taxAmount: item.taxAmount,
-        netRate: item.netrate,
+        netRate: item.netRate,
       });
     }
 
@@ -225,9 +337,9 @@ const updatePurchaseById = async (req, res) => {
         throw new Error(`Product not found: ${item.productId}`);
       }
 
-      if (product.stockQuantity < item.quantity) {
-        throw new Error(`Insufficient stock for ${product.name}`);
-      }
+      // if (product.stockQuantity > item.quantity) {
+      //   throw new Error(`Insufficient stock for ${product.name}`);
+      // }
       const stock = product.stockQuantity + item.quantity;
       // reduce stock again
       await product.update(
@@ -286,7 +398,7 @@ const deletePurchase = async (req, res) => {
   const transaction = await sequelize.transaction();
 
   try {
-    const { id } = req.body;
+    const { id } = req.params;
 
     const purchaseInvoice = await Purchase.findByPk(id, { transaction });
 
@@ -474,7 +586,9 @@ const createPurchases = async (req, res, next) => {
 
 module.exports = {
   getPurchase,
+  getPurchaseInvoicesByDate,
   getPurchaseById,
+  updatePaymentStatusById,
   createPurchase,
   updatePurchaseById,
   updatePurchaseStatus,

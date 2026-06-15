@@ -13,7 +13,7 @@ const addCategory = async (req, res) => {
     res.status(201).json({
       cat: {
         id: newCategory.id,
-        name: newCategory.category
+        category: newCategory.category
       },
       message: "Category Created"
     });
