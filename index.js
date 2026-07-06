@@ -34,7 +34,7 @@ app.get('/', (req, res) => {
 });
 
 app.get('/new', (req, res) => {
-  res.send('API is working!');
+  res.send('API is workingon new platform!');
 });
 
 // Error Middleware
