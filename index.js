@@ -33,6 +33,10 @@ app.get('/', (req, res) => {
   res.send('API is working for Sales Website');
 });
 
+app.get('/new', (req, res) => {
+  res.send('API is working for Sales Website on new deployment');
+});
+
 // Error Middleware
 app.use(errorHandler);
 

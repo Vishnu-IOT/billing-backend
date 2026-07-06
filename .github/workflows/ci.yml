@@ -1,0 +1,22 @@
+name: new deployment
+on:
+  push:
+    branches:
+      - main
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create SSH Key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SERVER_SSH_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+      - name: connect ssh server
+        run: |
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa ubuntu@${{secrets.SERVER_IP_ADDR}}
+           cd /git-billing-backend/billing-backend
+           git pull origin main
+           npm install
+           pm2 restart billing-backend
+          eof
