@@ -7,9 +7,9 @@ const Product = require('../models/Product');
 const getProducts = async (req, res) => {
   try {
     const products = await Product.find();
-    res.status(200).json(products);
+    return res.status(200).json(products);
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    return res.status(500).json({ message: error.message });
   }
 };
 
@@ -22,9 +22,9 @@ const getProductById = async (req, res) => {
     if (!product) {
       return res.status(404).json({ message: 'Product not found' });
     }
-    res.status(200).json(product);
+    return res.status(200).json(product);
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    return res.status(500).json({ message: error.message });
   }
 };
 
@@ -60,9 +60,9 @@ const createProduct = async (req, res) => {
       category,
     });
 
-    res.status(201).json(product);
+    return res.status(201).json(product);
   } catch (error) {
-    res.status(400).json({ message: error.message });
+    return res.status(400).json({ message: error.message });
   }
 };
 
@@ -84,9 +84,9 @@ const updateProduct = async (req, res) => {
       { new: true, runValidators: true }
     );
 
-    res.status(200).json(updatedProduct);
+    return res.status(200).json(updatedProduct);
   } catch (error) {
-    res.status(400).json({ message: error.message });
+    return res.status(400).json({ message: error.message });
   }
 };
 
@@ -104,9 +104,9 @@ const deleteProduct = async (req, res) => {
 
     await product.deleteOne();
 
-    res.status(200).json({ id: req.params.id, message: 'Product deleted' });
+    return res.status(200).json({ id: req.params.id, message: 'Product deleted' });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    return res.status(500).json({ message: error.message });
   }
 };
 

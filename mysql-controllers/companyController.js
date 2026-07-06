@@ -58,13 +58,13 @@ const addUser = async (req, res) => {
       role: role || 'Owner', // default role
     });
 
-    res.status(201).json({
+    return res.status(201).json({
       success: true,
       message: 'Users Created successfully',
       data: user,
     });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    return res.status(500).json({ success: false, message: error.message });
   }
 };
 
@@ -89,13 +89,13 @@ const updateUser = async (req, res) => {
 
     await user.update({ name, email, phone, role, is_active: status === '1' });
 
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
       message: 'Users Updated successfully',
       data: user,
     });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    return res.status(500).json({ success: false, message: error.message });
   }
 };
 
@@ -111,13 +111,13 @@ const getUsers = async (req, res) => {
       order: [['created_at', 'DESC']],
     });
 
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
       message: 'Users fetched successfully',
       data: users,
     });
   } catch (error) {
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: error.message,
     });
@@ -139,12 +139,12 @@ const deleteUsers = async (req, res) => {
       return res.status(404).json({ message: 'User not found' });
     }
 
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
       message: 'User deleted successfully',
     });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    return res.status(500).json({ success: false, message: error.message });
   }
 };
 
@@ -407,13 +407,13 @@ const createCompanyFinancials = async (req, res) => {
       account_type,
     });
 
-    res.status(201).json({
+    return res.status(201).json({
       success: true,
       message: 'Company Financials Created successfully',
       data: financials,
     });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    return res.status(500).json({ success: false, message: error.message });
   }
 };
 
@@ -465,13 +465,13 @@ const updateCompanyFinancials = async (req, res) => {
 
     await financials.update(updateData);
 
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
       message: 'Company Financials Updated successfully',
       data: financials,
     });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    return res.status(500).json({ success: false, message: error.message });
   }
 };
 

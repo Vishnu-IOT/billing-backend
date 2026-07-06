@@ -8,9 +8,9 @@ const getParty = async (req, res) => {
   try {
     const customers = await Party.findAll();
 
-    res.status(200).json(customers);
+    return res.status(200).json(customers);
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    return res.status(500).json({ message: error.message });
   }
 };
 
@@ -24,9 +24,9 @@ const getPartyById = async (req, res) => {
       return res.status(404).json({ message: 'Party not found' });
     }
 
-    res.status(200).json(customer);
+    return res.status(200).json(customer);
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    return res.status(500).json({ message: error.message });
   }
 };
 
@@ -55,9 +55,9 @@ const getPartyInvoiceById = async (req, res) => {
     // Merge both
     const combinedData = [...formattedSales, ...formattedPurchases];
 
-    res.status(200).json(combinedData);
+    return res.status(200).json(combinedData);
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    return res.status(500).json({ message: error.message });
   }
 };
 
@@ -83,9 +83,9 @@ const createParty = async (req, res) => {
       address,
     });
 
-    res.status(201).json(customer);
+    return res.status(201).json(customer);
   } catch (error) {
-    res.status(400).json({ message: error.message });
+    return res.status(400).json({ message: error.message });
   }
 };
 
@@ -101,9 +101,9 @@ const updateParty = async (req, res) => {
 
     await customer.update(req.body);
 
-    res.status(200).json(customer);
+    return res.status(200).json(customer);
   } catch (error) {
-    res.status(400).json({ message: error.message });
+    return res.status(400).json({ message: error.message });
   }
 };
 
@@ -119,12 +119,12 @@ const deleteParty = async (req, res) => {
 
     await customer.destroy();
 
-    res.status(200).json({
+    return res.status(200).json({
       id: req.params.id,
       message: 'Party deleted',
     });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    return res.status(500).json({ message: error.message });
   }
 };
 

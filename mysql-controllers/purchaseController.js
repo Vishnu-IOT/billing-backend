@@ -28,9 +28,9 @@ const getPurchase = async (req, res) => {
       ],
     });
 
-    res.status(200).json(invoices);
+    return res.status(200).json(invoices);
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    return res.status(500).json({ message: error.message });
   }
 };
 
@@ -110,9 +110,9 @@ const getPurchaseInvoicesByDate = async (req, res) => {
       ],
     });
 
-    res.status(200).json(invoices);
+    return res.status(200).json(invoices);
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    return res.status(500).json({ message: error.message });
   }
 };
 
@@ -128,9 +128,9 @@ const getPurchaseById = async (req, res) => {
     if (!invoice) {
       return res.status(404).json({ message: 'Invoice not found' });
     }
-    res.status(200).json(invoice);
+    return res.status(200).json(invoice);
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    return res.status(500).json({ message: error.message });
   }
 };
 
@@ -157,9 +157,9 @@ const updatePaymentStatusById = async (req, res) => {
       paymentStatus,
     });
 
-    res.status(200).json({ message: 'Payment Out updated successfully' });
+    return res.status(200).json({ message: 'Payment Out updated successfully' });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    return res.status(500).json({ message: error.message });
   }
 };
 
@@ -258,13 +258,13 @@ const createPurchase = async (req, res) => {
 
     // const calculatedTotalAmount = subtotal + tax - discount;
 
-    res.status(201).json(invoice);
+    return res.status(201).json(invoice);
 
     await transaction.commit();
   } catch (error) {
     await transaction.rollback();
 
-    res.status(400).json({ message: error.message });
+    return res.status(400).json({ message: error.message });
   }
 };
 
@@ -384,10 +384,10 @@ const updatePurchaseById = async (req, res) => {
 
     await transaction.commit();
 
-    res.status(200).json({ message: 'Purchase updated successfully' });
+    return res.status(200).json({ message: 'Purchase updated successfully' });
   } catch (error) {
     await transaction.rollback();
-    res.status(500).json({ message: error.message });
+    return res.status(500).json({ message: error.message });
   }
 };
 
@@ -446,13 +446,13 @@ const deletePurchase = async (req, res) => {
 
     await transaction.commit();
 
-    res.status(200).json({
+    return res.status(200).json({
       message: 'Invoice deleted and stock restored',
     });
   } catch (error) {
     await transaction.rollback();
 
-    res.status(500).json({
+    return res.status(500).json({
       message: error.message,
     });
   }
@@ -478,9 +478,9 @@ const updatePurchaseStatus = async (req, res) => {
     invoice.status = status;
     const updatedInvoice = await invoice.save();
 
-    res.status(200).json(updatedInvoice);
+    return res.status(200).json(updatedInvoice);
   } catch (error) {
-    res.status(400).json({ message: error.message });
+    return res.status(400).json({ message: error.message });
   }
 };
 
@@ -571,7 +571,7 @@ const createPurchases = async (req, res, next) => {
       [invoiceId]
     );
 
-    res.status(201).json({
+    return res.status(201).json({
       success: true,
       message: 'Invoice created successfully',
       data: { ...newInvoice[0], items: newItems },

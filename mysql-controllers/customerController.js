@@ -8,13 +8,13 @@ const getCustomers = async (req, res) => {
       attributes: ['id', 'name', 'phone', 'loyalty_points'],
     });
 
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
       message: 'Customers fetched successfully',
       data: customers,
     });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    return res.status(500).json({ success: false, message: error.message });
   }
 };
 
@@ -28,9 +28,9 @@ const getCustomerById = async (req, res) => {
       return res.status(404).json({ message: 'Customer not found' });
     }
 
-    res.status(200).json(customer);
+    return res.status(200).json(customer);
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    return res.status(500).json({ message: error.message });
   }
 };
 
@@ -54,9 +54,9 @@ const createCustomer = async (req, res) => {
       loyalty_points,
     });
 
-    res.status(201).json(customer);
+    return res.status(201).json(customer);
   } catch (error) {
-    res.status(400).json({ message: error.message });
+    return res.status(400).json({ message: error.message });
   }
 };
 
@@ -72,9 +72,9 @@ const updateCustomer = async (req, res) => {
 
     await customer.update(req.body);
 
-    res.status(200).json(customer);
+    return res.status(200).json(customer);
   } catch (error) {
-    res.status(400).json({ message: error.message });
+    return res.status(400).json({ message: error.message });
   }
 };
 
@@ -90,12 +90,12 @@ const deleteCustomer = async (req, res) => {
 
     await customer.destroy();
 
-    res.status(200).json({
+    return res.status(200).json({
       id: req.params.id,
       message: 'Customer deleted',
     });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    return res.status(500).json({ message: error.message });
   }
 };
 

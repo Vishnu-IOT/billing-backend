@@ -6,7 +6,6 @@ const User = require('../mysql-models/Users');
 const login = async (req, res) => {
   try {
     const { email, password } = req.body;
-    console.log(email, password);
 
     // 1. Validate input
     if (!email || !password) {

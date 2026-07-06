@@ -114,7 +114,7 @@ const dashboardData = async (req, res) => {
       ],
     });
 
-    res.status(200).json({
+    return res.status(200).json({
       currentMonth: {
         sales: Number(totalSales),
         purchase: Number(totalPurchase),
@@ -129,7 +129,7 @@ const dashboardData = async (req, res) => {
     });
   } catch (error) {
     console.error(error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: error.message,
     });

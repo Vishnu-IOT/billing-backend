@@ -80,6 +80,26 @@ const Product = sequelize.define(
       },
       onDelete: 'CASCADE',
     },
+
+    sku: {
+      type: DataTypes.STRING(100),
+      allowNull: true,
+    },
+
+    batchNo: {
+      type: DataTypes.STRING(100),
+      allowNull: true,
+    },
+
+    serialNo: {
+      type: DataTypes.STRING(100),
+      allowNull: true,
+    },
+
+    expiryDate: {
+      type: DataTypes.DATEONLY,
+      allowNull: true,
+    },
   },
   {
     tableName: 'products',

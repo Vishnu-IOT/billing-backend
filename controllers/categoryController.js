@@ -15,12 +15,12 @@ const addCategory = async (req, res) => {
       return res.status(404).json({ message: 'Category not found' });
     }
 
-    res.status(200).json({
+    return res.status(200).json({
       cat: { id: categorys._id, name: categorys.category },
       message: 'Category Created',
     });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    return res.status(500).json({ message: error.message });
   }
 };
 
@@ -31,9 +31,9 @@ const getCategory = async (req, res) => {
   try {
     await connectDB();
     const products = await Category.find().select('_id category');
-    res.status(200).json(products); //{cat: { id: products._id, name: products.category }}
+    return res.status(200).json(products); //{cat: { id: products._id, name: products.category }}
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    return res.status(500).json({ message: error.message });
   }
 };
 
@@ -50,13 +50,13 @@ const deleteCategory = async (req, res) => {
       return res.status(404).json({ message: "Category not found" });
     }
 
-    res.status(200).json({
+    return res.status(200).json({
       message: "Category deleted successfully",
       deletedCategory,
     });
 
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    return res.status(500).json({ message: error.message });
   }
 };
 

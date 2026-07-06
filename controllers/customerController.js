@@ -8,9 +8,9 @@ const getCustomers = async (req, res) => {
   try {
     await connectDB();
     const customers = await Customer.find();
-    res.status(200).json(customers);
+    return res.status(200).json(customers);
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    return res.status(500).json({ message: error.message });
   }
 };
 
@@ -24,9 +24,9 @@ const getCustomerById = async (req, res) => {
     if (!customer) {
       return res.status(404).json({ message: 'Customer not found' });
     }
-    res.status(200).json(customer);
+    return res.status(200).json(customer);
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    return res.status(500).json({ message: error.message });
   }
 };
 
@@ -51,9 +51,9 @@ const createCustomer = async (req, res) => {
       address,
     });
 
-    res.status(201).json(customer);
+    return res.status(201).json(customer);
   } catch (error) {
-    res.status(400).json({ message: error.message });
+    return res.status(400).json({ message: error.message });
   }
 };
 
@@ -75,9 +75,9 @@ const updateCustomer = async (req, res) => {
       { new: true, runValidators: true }
     );
 
-    res.status(200).json(updatedCustomer);
+    return res.status(200).json(updatedCustomer);
   } catch (error) {
-    res.status(400).json({ message: error.message });
+    return res.status(400).json({ message: error.message });
   }
 };
 
@@ -95,9 +95,9 @@ const deleteCustomer = async (req, res) => {
 
     await customer.deleteOne();
 
-    res.status(200).json({ id: req.params.id, message: 'Customer deleted' });
+    return res.status(200).json({ id: req.params.id, message: 'Customer deleted' });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    return res.status(500).json({ message: error.message });
   }
 };
 

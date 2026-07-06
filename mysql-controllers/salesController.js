@@ -52,9 +52,9 @@ const getInvoices = async (req, res) => {
       ],
     });
 
-    res.status(200).json(invoices);
+    return res.status(200).json(invoices);
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    return res.status(500).json({ message: error.message });
   }
 };
 
@@ -147,9 +147,9 @@ const getInvoicesByDate = async (req, res) => {
       ],
     });
 
-    res.status(200).json(invoices);
+    return res.status(200).json(invoices);
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    return res.status(500).json({ message: error.message });
   }
 };
 
@@ -165,9 +165,9 @@ const getInvoiceById = async (req, res) => {
     if (!invoice) {
       return res.status(404).json({ message: 'Invoice not found' });
     }
-    res.status(200).json(invoice);
+    return res.status(200).json(invoice);
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    return res.status(500).json({ message: error.message });
   }
 };
 
@@ -355,7 +355,6 @@ const createInvoice = async (req, res) => {
         by: item.quantity,
         where: {
           id: item.productId,
-          stockQuantity: { [Op.gte]: item.quantity }, // guard: won't go negative
         },
         transaction,
       });
@@ -372,6 +371,11 @@ const createInvoice = async (req, res) => {
         taxPercentage: item.taxPercentage,
         taxAmount: item.taxAmount,
         netRate: item.netRate,
+        batchNo: item.batchNumber || null,
+        serialNo: item.serialNumber || null,
+        expiryDate: item.expiryDate || null,  
+        sku: item.sku || null,
+        hsncode: item.hsnCode || null,
       });
     }
 
@@ -380,11 +384,11 @@ const createInvoice = async (req, res) => {
 
     // const calculatedTotalAmount = subtotal + tax - discount;
     await transaction.commit();
-    res.status(201).json(invoice);
+    return res.status(201).json(invoice);
   } catch (error) {
     await transaction.rollback();
 
-    res.status(400).json({ message: error.message });
+    return res.status(400).json({ message: error.message });
   }
 };
 
@@ -485,6 +489,11 @@ const updateInvoiceById = async (req, res) => {
         taxPercentage: item.taxPercentage,
         taxAmount: item.taxAmount,
         netRate: item.netRate,
+        batchNo: item.batchNumber || null,
+        serialNo: item.serialNumber || null,
+        expiryDate: item.expiryDate || null,
+        sku: item.sku || null,
+        hsncode: item.hsnCode || null,
       });
     }
 
@@ -513,10 +522,10 @@ const updateInvoiceById = async (req, res) => {
 
     await transaction.commit();
 
-    res.status(200).json({ message: 'Invoice updated successfully' });
+    return res.status(200).json({ message: 'Invoice updated successfully' });
   } catch (error) {
     await transaction.rollback();
-    res.status(500).json({ message: error.message });
+    return res.status(500).json({ message: error.message });
   }
 };
 
@@ -543,9 +552,9 @@ const updatePaymentStatusById = async (req, res) => {
       paymentStatus,
     });
 
-    res.status(200).json({ message: 'Payment In updated successfully' });
+    return res.status(200).json({ message: 'Payment In updated successfully' });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    return res.status(500).json({ message: error.message });
   }
 };
 
@@ -604,13 +613,13 @@ const deleteInvoice = async (req, res) => {
 
     await transaction.commit();
 
-    res.status(200).json({
+    return res.status(200).json({
       message: 'Invoice deleted and stock restored',
     });
   } catch (error) {
     await transaction.rollback();
 
-    res.status(500).json({
+    return res.status(500).json({
       message: error.message,
     });
   }

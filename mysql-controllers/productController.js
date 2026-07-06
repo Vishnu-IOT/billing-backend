@@ -8,9 +8,9 @@ const getProducts = async (req, res) => {
   try {
     const products = await Product.findAll();
 
-    res.status(200).json(products);
+    return res.status(200).json(products);
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    return res.status(500).json({ message: error.message });
   }
 };
 
@@ -25,9 +25,9 @@ const getProductById = async (req, res) => {
       return res.status(404).json({ message: 'Product not found' });
     }
 
-    res.status(200).json(product);
+    return res.status(200).json(product);
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    return res.status(500).json({ message: error.message });
   }
 };
 
@@ -48,6 +48,10 @@ const createProduct = async (req, res) => {
       unit,
       barcode,
       categoryId,
+      sku,
+      batchNo,
+      serialNo,
+      expiryDate,
     } = req.body;
 
     const product = await Product.create({
@@ -57,16 +61,20 @@ const createProduct = async (req, res) => {
       taxRate,
       salesPrice,
       purchasePrice,
-      stockQuantity,
+      // stockQuantity,
       discount,
       unit,
       barcode,
       categoryId,
+      sku,
+      batchNo,
+      serialNo,
+      expiryDate: expiryDate || null,
     });
 
-    res.status(201).json(product);
+    return res.status(201).json(product);
   } catch (error) {
-    res.status(400).json({ message: error.message });
+    return res.status(400).json({ message: error.message });
   }
 };
 
@@ -81,15 +89,15 @@ const updateProduct = async (req, res) => {
       return res.status(404).json({ message: 'Product not found' });
     }
 
-    await Product.update(req.body, {
+    await Product.update({ ...req.body, expiryDate: req.body.expiryDate || null }, {
       where: { id: req.params.id },
     });
 
     const updatedProduct = await Product.findByPk(req.params.id);
 
-    res.status(200).json(updatedProduct);
+    return res.status(200).json(updatedProduct);
   } catch (error) {
-    res.status(400).json({ message: error.message });
+    return res.status(400).json({ message: error.message });
   }
 };
 
@@ -124,12 +132,12 @@ const updateStockBulk = async (req, res) => {
       where: { id: ids },
     });
 
-    res.status(200).json({
+    return res.status(200).json({
       message: 'Stock updated successfully',
       data: updatedProducts,
     });
   } catch (error) {
-    res.status(400).json({ message: error.message });
+    return res.status(400).json({ message: error.message });
   }
 };
 
@@ -148,12 +156,12 @@ const deleteProduct = async (req, res) => {
       where: { id: req.params.id },
     });
 
-    res.status(200).json({
+    return res.status(200).json({
       id: req.params.id,
       message: 'Product deleted',
     });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    return res.status(500).json({ message: error.message });
   }
 };
 
