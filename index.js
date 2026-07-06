@@ -34,7 +34,7 @@ app.get('/', (req, res) => {
 });
 
 app.get('/new', (req, res) => {
-  res.send('API is working for Sales Website on new Deployment');
+  res.send('API is working for Sales Website on new Deployment and container');
 });
 
 // Error Middleware
