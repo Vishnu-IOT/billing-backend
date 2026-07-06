@@ -14,7 +14,7 @@ jobs:
           chmod 600 ~/.ssh/id_rsa
       - name: connect ssh server
         run: |
-          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa ubuntu@${{secrets.SERVER_IP_ADDR}}
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa ubuntu@${{secrets.SERVER_IP_ADDR}} >> EOF
            cd /git-billing-backend/billing-backend
            git pull origin main
            npm install
