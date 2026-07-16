@@ -78,6 +78,30 @@ const PurchaseItem = sequelize.define(
       allowNull: false,
       defaultValue: 0,
     },
+    sku: {
+      type: DataTypes.STRING(255),
+      allowNull: true,
+    },
+
+    batchNo: {
+      type: DataTypes.STRING(255),
+      allowNull: true,
+    },
+
+    serialNo: {
+      type: DataTypes.STRING(255),
+      allowNull: true,
+    },
+
+    expiryDate: {
+      type: DataTypes.DATEONLY,
+      allowNull: true,
+    },
+
+    hsncode: {
+      type: DataTypes.STRING(255),
+      allowNull: true,
+    },
   },
   {
     tableName: 'purchase_items',

@@ -13,7 +13,6 @@ const {
   getPurchaseById,
   createPurchase,
   updatePurchaseStatus,
-  createPurchases,
   updatePaymentStatusById,
   deletePurchase,
   updatePurchaseById,

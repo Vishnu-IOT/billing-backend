@@ -16,6 +16,16 @@ const Purchase = sequelize.define(
       allowNull: false,
     },
 
+    po_number: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
+
+    eway_bill: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
+
     partyId: {
       type: DataTypes.INTEGER,
       allowNull: false,

@@ -465,9 +465,9 @@ const updateInvoiceById = async (req, res) => {
         throw new Error(`Product not found: ${item.productId}`);
       }
 
-      if (product.stockQuantity < item.quantity) {
-        throw new Error(`Insufficient stock for ${product.name}`);
-      }
+      // if (product.stockQuantity < item.quantity) {
+      //   throw new Error(`Insufficient stock for ${product.name}`);
+      // }
 
       // reduce stock again
       await product.update(

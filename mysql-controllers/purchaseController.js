@@ -168,6 +168,7 @@ const updatePaymentStatusById = async (req, res) => {
 // @access  Public
 const createPurchase = async (req, res) => {
   const transaction = await sequelize.transaction();
+
   try {
     const {
       invoiceNumber,
@@ -179,11 +180,13 @@ const createPurchase = async (req, res) => {
       totalAmount,
       paymentStatus,
       purchaseDate,
+      po_number,
+      eway_bill,
       items,
     } = req.body;
 
     if (!items || items.length === 0) {
-      return res.status(400).json({ message: 'No purchase items' });
+      throw new Error('No purchase items');
     }
 
     const invoice = await Purchase.create(
@@ -197,9 +200,13 @@ const createPurchase = async (req, res) => {
         totalAmount,
         paymentStatus,
         purchaseDate,
+        po_number,
+        eway_bill,
       },
-      { transaction },
-      { include: Party }
+      {
+        transaction,
+        include: [Party]
+      }
     );
 
     // Calculate subtotal and validate items
@@ -212,12 +219,12 @@ const createPurchase = async (req, res) => {
       const item = items[i];
 
       // find product in products table
-      const product = await Product.findByPk(item.productId);
+      const product = await Product.findByPk(item.productId, {
+        transaction,
+      });
 
       if (!product) {
-        return res
-          .status(404)
-          .json({ message: `Product not found: ${item.productId}` });
+        throw new Error(`Product not found: ${item.productId}`);
       }
 
       // const price = product.purchasePrice;
@@ -234,8 +241,8 @@ const createPurchase = async (req, res) => {
         },
         {
           where: { id: item.productId },
-        },
-        { transaction }
+          transaction,
+        }
       );
 
       processedItems.push({
@@ -250,17 +257,21 @@ const createPurchase = async (req, res) => {
         taxPercentage: item.taxPercentage,
         taxAmount: item.taxAmount,
         netRate: item.netRate,
+        batchNo: item.batchNumber || null,
+        serialNo: item.serialNumber || null,
+        expiryDate: item.expiryDate || null,
+        sku: item.sku || null,
+        hsncode: item.hsnCode || null,
       });
     }
 
     // Insert all items at once
     await PurchaseItem.bulkCreate(processedItems, { transaction });
+    await transaction.commit();
 
     // const calculatedTotalAmount = subtotal + tax - discount;
 
     return res.status(201).json(invoice);
-
-    await transaction.commit();
   } catch (error) {
     await transaction.rollback();
 
@@ -287,6 +298,8 @@ const updatePurchaseById = async (req, res) => {
       totalAmount,
       paymentStatus,
       purchaseDate,
+      po_number,
+      eway_bill,
       items,
     } = req.body;
 
@@ -361,6 +374,11 @@ const updatePurchaseById = async (req, res) => {
         taxPercentage: item.taxPercentage,
         taxAmount: item.taxAmount,
         netRate: item.netRate,
+        batchNo: item.batchNumber || null,
+        serialNo: item.serialNumber || null,
+        expiryDate: item.expiryDate || null,
+        sku: item.sku || null,
+        hsncode: item.hsnCode || null,
       });
     }
 
@@ -378,6 +396,8 @@ const updatePurchaseById = async (req, res) => {
         totalAmount,
         paymentStatus,
         purchaseDate,
+        po_number,
+        eway_bill,
       },
       { transaction }
     );
@@ -428,6 +448,7 @@ const deletePurchase = async (req, res) => {
         },
         {
           where: { id: item.productId },
+          transaction
         }
       );
     }
@@ -484,106 +505,6 @@ const updatePurchaseStatus = async (req, res) => {
   }
 };
 
-// POST /api/invoices
-// @desc    Create invoice status
-// @route   POST /api/invoices/:id/status
-// @access  Public
-const createPurchases = async (req, res, next) => {
-  // const connection = await pool.getConnection();
-  try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ success: false, errors: errors.array() });
-    }
-
-    await connection.beginTransaction();
-
-    const {
-      client_id,
-      issue_date,
-      due_date,
-      items,
-      tax_rate = 0,
-      discount = 0,
-      notes,
-      status = 'draft',
-    } = req.body;
-
-    // Verify client belongs to user
-    const [clientRows] = await connection.query(
-      'SELECT * FROM clients WHERE id = ? AND user_id = ?',
-      [client_id, req.user.id]
-    );
-    if (!clientRows.length) {
-      return res
-        .status(404)
-        .json({ success: false, message: 'Client not found' });
-    }
-
-    // Calculate totals
-    const subtotal = items.reduce(
-      (sum, item) => sum + item.quantity * item.unit_price,
-      0
-    );
-    const tax_amount = (subtotal - discount) * (tax_rate / 100);
-    const total = subtotal - discount + tax_amount;
-    const invoice_number = generateInvoiceNumber();
-
-    const [invoiceResult] = await connection.query(
-      `INSERT INTO invoices (invoice_number, user_id, client_id, status, issue_date, due_date,
-        subtotal, tax_rate, tax_amount, discount, total, notes)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        invoice_number,
-        req.user.id,
-        client_id,
-        status,
-        issue_date,
-        due_date,
-        subtotal,
-        tax_rate,
-        tax_amount,
-        discount,
-        total,
-        notes,
-      ]
-    );
-
-    const invoiceId = invoiceResult.insertId;
-
-    // Insert items
-    for (const item of items) {
-      const amount = item.quantity * item.unit_price;
-      await connection.query(
-        'INSERT INTO invoice_items (invoice_id, description, quantity, unit_price, amount) VALUES (?, ?, ?, ?, ?)',
-        [invoiceId, item.description, item.quantity, item.unit_price, amount]
-      );
-    }
-
-    await connection.commit();
-
-    const [newInvoice] = await pool.query(
-      'SELECT * FROM invoices WHERE id = ?',
-      [invoiceId]
-    );
-    const [newItems] = await pool.query(
-      'SELECT * FROM invoice_items WHERE invoice_id = ?',
-      [invoiceId]
-    );
-
-    return res.status(201).json({
-      success: true,
-      message: 'Invoice created successfully',
-      data: { ...newInvoice[0], items: newItems },
-    });
-  } catch (error) {
-    await connection.rollback();
-    next(error);
-  } finally {
-    connection.release();
-  }
-};
-
 module.exports = {
   getPurchase,
   getPurchaseInvoicesByDate,
@@ -592,6 +513,5 @@ module.exports = {
   createPurchase,
   updatePurchaseById,
   updatePurchaseStatus,
-  createPurchases,
   deletePurchase,
 };
