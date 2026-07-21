@@ -7,7 +7,14 @@
   "type": "commonjs",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node index.js",
+    "migrate": "sequelize-cli db:migrate",
+    "migrate:undo": "sequelize-cli db:migrate:undo",
+    "migrate:undo:all": "sequelize-cli db:migrate:undo:all",
+    "seed": "sequelize-cli db:seed:all",
+    "seed:undo": "sequelize-cli db:seed:undo",
+    "seed:undo:all": "sequelize-cli db:seed:undo:all"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
@@ -22,5 +29,8 @@
     "pdfkit": "^0.17.2",
     "sequelize": "^6.37.8",
     "slugify": "^1.6.9"
+  },
+  "devDependencies": {
+    "sequelize-cli": "^6.6.5"
   }
 }
