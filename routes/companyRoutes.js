@@ -15,9 +15,13 @@ const {
 } = require('../mysql-controllers/companyController');
 
 router.get('/get-User/:companyId', getUsers);
+router.get('/get-user/:companyId', getUsers);
 router.post('/add-User/:companyId', addUser);
+router.post('/add-user/:companyId', addUser);
 router.post('/update-User/:id', updateUser);
+router.post('/update-user/:id', updateUser);
 router.post('/delete-User/:id', deleteUsers);
+router.post('/delete-user/:id', deleteUsers);
 
 router.get('/get-Company/:id', getCompanyById);
 router.post('/add-Company', createCompany);

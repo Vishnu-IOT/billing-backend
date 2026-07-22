@@ -140,10 +140,10 @@ const getPurchaseById = async (req, res) => {
 const updatePaymentStatusById = async (req, res) => {
   try {
     const { id } = req.params;
-    const { paymentStatus } = req.body;
+    const { paymentStatus, amount, paymentMode, referenceNo, notes } = req.body;
 
     if (!paymentStatus) {
-      return res.status(404).json({ message: 'Status not found' });
+      return res.status(400).json({ message: 'Status not found' });
     }
 
     const invoice = await Purchase.findByPk(id);
@@ -155,6 +155,18 @@ const updatePaymentStatusById = async (req, res) => {
     // 5️⃣ Update invoice
     await invoice.update({
       paymentStatus,
+    });
+
+    // Record PaymentOut history
+    const PaymentOut = require('../mysql-models/PaymentOut');
+    await PaymentOut.create({
+      purchaseId: invoice.id,
+      partyId: invoice.partyId,
+      paymentDate: new Date(),
+      amount: amount || invoice.totalAmount || 0,
+      paymentMode: paymentMode || 'Cash',
+      referenceNo: referenceNo || null,
+      notes: notes || `Payment status updated to ${paymentStatus}`,
     });
 
     return res.status(200).json({ message: 'Payment Out updated successfully' });

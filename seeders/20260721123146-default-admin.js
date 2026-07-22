@@ -9,11 +9,9 @@ module.exports = {
     await queryInterface.bulkInsert('users', [
       {
         name: 'Admin',
-        email: 'admin@gmail.com',
-        phoneNo: '9876543210',
-        password: hashedPassword,
-        createdAt: new Date(),
-        updatedAt: new Date()
+        email: 'admin12@gmail.com',
+        phone: '9876543210',
+        password_hash: hashedPassword,
       }
     ]);
   },

@@ -15,8 +15,10 @@ const sequelize = new Sequelize(
 );
 
 sequelize.authenticate()
-  .then(() => {
+  .then(async () => {
     console.log("Connected to MySQL Database using Sequelize");
+    await sequelize.sync();
+    console.log("All ERP tables synchronized successfully.");
   })
   .catch((err) => {
     console.error("Unable to connect to the database:", err);

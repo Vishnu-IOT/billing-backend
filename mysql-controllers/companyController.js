@@ -2,6 +2,7 @@ const Users = require('../mysql-models/Users');
 const Company = require('../mysql-models/Company');
 const CompanyFinancials = require('../mysql-models/Company_Financials');
 const bcrypt = require('bcryptjs');
+const sequelize = require('../config/sqldb');
 
 /**
  * Converts a string into a URL-friendly slug
@@ -106,6 +107,24 @@ const getUsers = async (req, res) => {
     const users = await Users.findAll({
       attributes: {
         exclude: ['password'],
+        include: [
+          [
+            sequelize.literal(`(
+              SELECT COUNT(*)
+              FROM sales
+              WHERE sales.userId = User.id
+            )`),
+            'totalInvoices'
+          ],
+          [
+            sequelize.literal(`(
+              SELECT COALESCE(SUM(totalAmount), 0)
+              FROM sales
+              WHERE sales.userId = User.id
+            )`),
+            'totalSalesAmount'
+          ]
+        ]
       },
 
       order: [['created_at', 'DESC']],

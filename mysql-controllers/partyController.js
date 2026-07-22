@@ -128,6 +128,60 @@ const deleteParty = async (req, res) => {
   }
 };
 
+const getPartyAgeing = async (req, res) => {
+  try {
+    const partyId = req.params.id;
+    const party = await Party.findByPk(partyId);
+
+    if (!party) {
+      return res.status(404).json({ message: 'Party not found' });
+    }
+
+    const unpaidSales = await Sale.findAll({
+      where: {
+        partyId,
+        paymentStatus: ['Unpaid', 'Overdue'],
+      },
+    });
+
+    const now = new Date();
+    let bucket0_30 = 0;
+    let bucket31_60 = 0;
+    let bucket61_90 = 0;
+    let bucket90Plus = 0;
+
+    unpaidSales.forEach((s) => {
+      const saleDate = new Date(s.saleDate || s.createdAt);
+      const diffDays = Math.floor((now - saleDate) / (1000 * 60 * 60 * 24));
+      const amount = Number(s.totalAmount || 0);
+
+      if (diffDays <= 30) {
+        bucket0_30 += amount;
+      } else if (diffDays <= 60) {
+        bucket31_60 += amount;
+      } else if (diffDays <= 90) {
+        bucket61_90 += amount;
+      } else {
+        bucket90Plus += amount;
+      }
+    });
+
+    return res.status(200).json({
+      partyId: Number(partyId),
+      partyName: party.name,
+      totalUnpaid: bucket0_30 + bucket31_60 + bucket61_90 + bucket90Plus,
+      aging: {
+        '0-30': bucket0_30,
+        '31-60': bucket31_60,
+        '61-90': bucket61_90,
+        '90+': bucket90Plus,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+};
+
 module.exports = {
   getParty,
   getPartyById,
@@ -135,4 +189,6 @@ module.exports = {
   createParty,
   updateParty,
   deleteParty,
+  getPartyAgeing,
 };
+

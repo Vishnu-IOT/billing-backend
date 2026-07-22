@@ -15,6 +15,10 @@ const {
   updateProduct,
   deleteProduct,
   updateStockBulk,
+  getProductBatches,
+  addProductBatch,
+  updateProductBatch,
+  deleteProductBatch,
 } = require('../mysql-controllers/productController');
 
 // router.route('/').get(getProducts).post(createProduct);
@@ -24,10 +28,11 @@ router.delete('/delete-Products/:id', deleteProduct);
 router.post('/update-Products/:id', updateProduct);
 router.post('/updatebulk-Products', updateStockBulk);
 
-// router
-//   .route('/:id')
-//   .get(getProductById)
-//   .put(updateProduct)
-//   .delete(deleteProduct);
+// Product Batch Routes
+router.get('/get-Batches/:productId', getProductBatches);
+router.post('/add-Batch/:productId', addProductBatch);
+router.post('/update-Batch/:productId/:batchId', updateProductBatch);
+router.delete('/delete-Batch/:productId/:batchId', deleteProductBatch);
 
 module.exports = router;
+

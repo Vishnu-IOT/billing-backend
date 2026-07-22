@@ -165,6 +165,80 @@ const deleteProduct = async (req, res) => {
   }
 };
 
+const ProductBatch = require('../mysql-models/ProductBatch');
+
+// @desc    Get product batches
+const getProductBatches = async (req, res) => {
+  try {
+    const { productId } = req.params;
+    const batches = await ProductBatch.findAll({
+      where: { productId },
+      order: [['createdAt', 'DESC']],
+    });
+    return res.status(200).json(batches);
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+};
+
+// @desc    Add product batch
+const addProductBatch = async (req, res) => {
+  try {
+    const { productId } = req.params;
+    const { batchNumber, mfgDate, expiryDate, quantity, mrp, salePrice, purchasePrice, companyId } = req.body;
+
+    const batch = await ProductBatch.create({
+      productId,
+      batchNumber,
+      mfgDate,
+      expiryDate,
+      quantity: quantity || 0,
+      mrp: mrp || 0,
+      salePrice: salePrice || 0,
+      purchasePrice: purchasePrice || 0,
+      companyId: companyId || 1,
+    });
+
+    return res.status(201).json(batch);
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+};
+
+// @desc    Update product batch
+const updateProductBatch = async (req, res) => {
+  try {
+    const { productId, batchId } = req.params;
+    const batch = await ProductBatch.findOne({ where: { id: batchId, productId } });
+
+    if (!batch) {
+      return res.status(404).json({ message: 'Batch not found' });
+    }
+
+    await batch.update(req.body);
+    return res.status(200).json(batch);
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+};
+
+// @desc    Delete product batch
+const deleteProductBatch = async (req, res) => {
+  try {
+    const { productId, batchId } = req.params;
+    const batch = await ProductBatch.findOne({ where: { id: batchId, productId } });
+
+    if (!batch) {
+      return res.status(404).json({ message: 'Batch not found' });
+    }
+
+    await batch.destroy();
+    return res.status(200).json({ message: 'Batch deleted successfully' });
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+};
+
 module.exports = {
   getProducts,
   getProductById,
@@ -172,4 +246,8 @@ module.exports = {
   updateProduct,
   deleteProduct,
   updateStockBulk,
+  getProductBatches,
+  addProductBatch,
+  updateProductBatch,
+  deleteProductBatch,
 };

@@ -16,6 +16,7 @@ const {
   updateParty,
   deleteParty,
   getPartyInvoiceById,
+  getPartyAgeing,
 } = require('../mysql-controllers/partyController');
 
 router.post('/add-Party', createParty);
@@ -23,6 +24,7 @@ router.get('/get-Party', getParty);
 router.delete('/delete-Party/:id', deleteParty);
 router.post('/update-Party/:id', updateParty);
 router.get('/invoiceById-Party/:id', getPartyInvoiceById);
+router.get('/get-Ageing/:id', getPartyAgeing);
 router
   .route('/:id')
   .get(getPartyById)
@@ -30,3 +32,4 @@ router
   .delete(deleteParty);
 
 module.exports = router;
+

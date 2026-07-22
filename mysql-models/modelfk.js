@@ -10,6 +10,17 @@ const CompanyFinancials = require('./Company_Financials');
 const InvoiceSettings = require('./Invoice_Settings');
 const Customer = require('./Customer');
 const User = require('./Users');
+const Owner = require('./Owner');
+const Document = require('./Document');
+const DocumentItem = require('./DocumentItem');
+const Expense = require('./Expense');
+const StockAdjustment = require('./StockAdjustment');
+const ProductBatch = require('./ProductBatch');
+const EInvoice = require('./EInvoice');
+const EWayBill = require('./EWayBill');
+const NotificationTemplate = require('./NotificationTemplate');
+const PaymentIn = require('./PaymentIn');
+const PaymentOut = require('./PaymentOut');
 
 // Category → Product
 Category.hasMany(Product, {
@@ -95,6 +106,105 @@ PurchaseItem.belongsTo(Product, {
   foreignKey: 'productId',
 });
 
+// Document → DocumentItem
+Document.hasMany(DocumentItem, {
+  foreignKey: 'documentId',
+  as: 'items',
+  onDelete: 'CASCADE',
+});
+
+DocumentItem.belongsTo(Document, {
+  foreignKey: 'documentId',
+});
+
+// Party → Document
+Party.hasMany(Document, {
+  foreignKey: 'partyId',
+});
+
+Document.belongsTo(Party, {
+  foreignKey: 'partyId',
+});
+
+// Product → ProductBatch
+Product.hasMany(ProductBatch, {
+  foreignKey: 'productId',
+  as: 'batches',
+  onDelete: 'CASCADE',
+});
+
+ProductBatch.belongsTo(Product, {
+  foreignKey: 'productId',
+});
+
+// Product → StockAdjustment
+Product.hasMany(StockAdjustment, {
+  foreignKey: 'productId',
+  onDelete: 'CASCADE',
+});
+
+StockAdjustment.belongsTo(Product, {
+  foreignKey: 'productId',
+});
+
+// Sale → EInvoice
+Sale.hasOne(EInvoice, {
+  foreignKey: 'saleId',
+  onDelete: 'CASCADE',
+});
+
+EInvoice.belongsTo(Sale, {
+  foreignKey: 'saleId',
+});
+
+// Sale → EWayBill
+Sale.hasOne(EWayBill, {
+  foreignKey: 'saleId',
+  onDelete: 'CASCADE',
+});
+
+EWayBill.belongsTo(Sale, {
+  foreignKey: 'saleId',
+});
+
+// Sale → PaymentIn
+Sale.hasMany(PaymentIn, {
+  foreignKey: 'saleId',
+  as: 'payments',
+});
+
+PaymentIn.belongsTo(Sale, {
+  foreignKey: 'saleId',
+});
+
+// Party → PaymentIn
+Party.hasMany(PaymentIn, {
+  foreignKey: 'partyId',
+});
+
+PaymentIn.belongsTo(Party, {
+  foreignKey: 'partyId',
+});
+
+// Purchase → PaymentOut
+Purchase.hasMany(PaymentOut, {
+  foreignKey: 'purchaseId',
+  as: 'payments',
+});
+
+PaymentOut.belongsTo(Purchase, {
+  foreignKey: 'purchaseId',
+});
+
+// Party → PaymentOut
+Party.hasMany(PaymentOut, {
+  foreignKey: 'partyId',
+});
+
+PaymentOut.belongsTo(Party, {
+  foreignKey: 'partyId',
+});
+
 // ✅ Company ↔ CompanyFinancials (One-to-One)
 Company.hasOne(CompanyFinancials, {
   foreignKey: 'companyId',
@@ -107,7 +217,7 @@ CompanyFinancials.belongsTo(Company, {
   as: 'company',
 });
 
-// ✅ Company ↔ Users (One-to-One)
+// ✅ Company ↔ Users
 User.belongsTo(Company, {
   foreignKey: 'companyId',
   as: 'company',
@@ -143,4 +253,16 @@ module.exports = {
   CompanyFinancials,
   InvoiceSettings,
   User,
+  Owner,
+  Document,
+  DocumentItem,
+  Expense,
+  StockAdjustment,
+  ProductBatch,
+  EInvoice,
+  EWayBill,
+  NotificationTemplate,
+  PaymentIn,
+  PaymentOut,
 };
+
