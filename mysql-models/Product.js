@@ -100,6 +100,21 @@ const Product = sequelize.define(
       type: DataTypes.DATEONLY,
       allowNull: true,
     },
+
+    reorderLevel: {
+      type: DataTypes.INTEGER,
+      defaultValue: 10,
+    },
+
+    minOrderQuantity: {
+      type: DataTypes.INTEGER,
+      defaultValue: 1,
+    },
+
+    brandId: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+    },
   },
   {
     tableName: 'products',

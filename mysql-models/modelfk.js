@@ -21,6 +21,8 @@ const EWayBill = require('./EWayBill');
 const NotificationTemplate = require('./NotificationTemplate');
 const PaymentIn = require('./PaymentIn');
 const PaymentOut = require('./PaymentOut');
+const POSShift = require('./POSShift');
+const HoldBill = require('./HoldBill');
 
 // Category → Product
 Category.hasMany(Product, {
@@ -240,6 +242,62 @@ InvoiceSettings.belongsTo(Company, {
   as: 'company',
 });
 
+const Warehouse = require('./Warehouse');
+const StockMovement = require('./StockMovement');
+const StockTransfer = require('./StockTransfer');
+const StockTransferItem = require('./StockTransferItem');
+
+// Warehouse associations
+Warehouse.hasMany(StockMovement, { foreignKey: 'warehouseId' });
+StockMovement.belongsTo(Warehouse, { foreignKey: 'warehouseId' });
+
+Product.hasMany(StockMovement, { foreignKey: 'productId' });
+StockMovement.belongsTo(Product, { foreignKey: 'productId' });
+
+Warehouse.hasMany(StockTransfer, { foreignKey: 'fromWarehouseId', as: 'OutgoingTransfers' });
+Warehouse.hasMany(StockTransfer, { foreignKey: 'toWarehouseId', as: 'IncomingTransfers' });
+StockTransfer.belongsTo(Warehouse, { foreignKey: 'fromWarehouseId', as: 'FromWarehouse' });
+StockTransfer.belongsTo(Warehouse, { foreignKey: 'toWarehouseId', as: 'ToWarehouse' });
+
+StockTransfer.hasMany(StockTransferItem, { foreignKey: 'stockTransferId', as: 'items', onDelete: 'CASCADE' });
+StockTransferItem.belongsTo(StockTransfer, { foreignKey: 'stockTransferId' });
+
+Product.hasMany(StockTransferItem, { foreignKey: 'productId' });
+StockTransferItem.belongsTo(Product, { foreignKey: 'productId' });
+
+Warehouse.hasMany(Sale, { foreignKey: 'warehouseId' });
+Sale.belongsTo(Warehouse, { foreignKey: 'warehouseId' });
+
+Warehouse.hasMany(Purchase, { foreignKey: 'warehouseId' });
+Purchase.belongsTo(Warehouse, { foreignKey: 'warehouseId' });
+
+const Account = require('./Account');
+const JournalEntry = require('./JournalEntry');
+const JournalLine = require('./JournalLine');
+
+// Accounting relations
+JournalEntry.hasMany(JournalLine, { foreignKey: 'journalEntryId', as: 'lines', onDelete: 'CASCADE' });
+JournalLine.belongsTo(JournalEntry, { foreignKey: 'journalEntryId' });
+
+Account.hasMany(JournalLine, { foreignKey: 'accountId' });
+JournalLine.belongsTo(Account, { foreignKey: 'accountId', as: 'Account' });
+
+Party.hasMany(JournalLine, { foreignKey: 'partyId' });
+JournalLine.belongsTo(Party, { foreignKey: 'partyId', as: 'Party' });
+
+const Brand = require('./Brand');
+const ProductVariant = require('./ProductVariant');
+const AuditLog = require('./AuditLog');
+
+Brand.hasMany(Product, { foreignKey: 'brandId' });
+Product.belongsTo(Brand, { foreignKey: 'brandId' });
+
+Product.hasMany(ProductVariant, { foreignKey: 'productId', as: 'variants', onDelete: 'CASCADE' });
+ProductVariant.belongsTo(Product, { foreignKey: 'productId' });
+
+User.hasMany(AuditLog, { foreignKey: 'userId' });
+AuditLog.belongsTo(User, { foreignKey: 'userId' });
+
 module.exports = {
   Category,
   Product,
@@ -264,5 +322,20 @@ module.exports = {
   NotificationTemplate,
   PaymentIn,
   PaymentOut,
+  POSShift,
+  HoldBill,
+  Warehouse,
+  StockMovement,
+  StockTransfer,
+  StockTransferItem,
+  Account,
+  JournalEntry,
+  JournalLine,
+  Brand,
+  ProductVariant,
+  AuditLog,
 };
+
+
+
 

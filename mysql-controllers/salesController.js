@@ -6,6 +6,9 @@ const Party = require('../mysql-models/Party');
 const { Op, Sequelize } = require('sequelize');
 const Customer = require('../mysql-models/Customer');
 const User = require('../mysql-models/Users');
+const POSShift = require('../mysql-models/POSShift');
+const StockMovement = require('../mysql-models/StockMovement');
+const { recordAutomatedJournalEntry } = require('./accountingController');
 
 // @desc    Get all invoices
 // @route   GET /api/invoices
@@ -272,6 +275,8 @@ const createInvoice = async (req, res) => {
       phone,
       partyId,
       userId,
+      shiftId,
+      paymentDetails,
       global_discount_percentage = 0,
       global_discount_amount = 0,
       baseRate,
@@ -303,12 +308,20 @@ const createInvoice = async (req, res) => {
 
     const { billNumber, fyYear } = await generateInvoiceNumber(transaction);
 
+    const formattedPaymentDetails = paymentDetails
+      ? typeof paymentDetails === 'string'
+        ? paymentDetails
+        : JSON.stringify(paymentDetails)
+      : null;
+
     const invoice = await Sale.create(
       {
         invoiceNumber: billNumber,
         partyId,
         customerId,
         userId,
+        shiftId: shiftId || null,
+        paymentDetails: formattedPaymentDetails,
         global_discount_percentage,
         global_discount_amount,
         baseRate,
@@ -325,6 +338,39 @@ const createInvoice = async (req, res) => {
         include: Party,
       }
     );
+
+    // Update POS Shift summary if shiftId is provided
+    if (shiftId) {
+      const activeShift = await POSShift.findByPk(shiftId, { transaction });
+      if (activeShift) {
+        let cashAdd = 0;
+        let cardAdd = 0;
+        let upiAdd = 0;
+
+        if (paymentDetails) {
+          const pd = typeof paymentDetails === 'string' ? JSON.parse(paymentDetails) : paymentDetails;
+          cashAdd = Number(pd.cash || 0);
+          cardAdd = Number(pd.card || 0);
+          upiAdd = Number(pd.upi || 0);
+          // If simple single status without split details:
+          if (!pd.cash && !pd.card && !pd.upi) {
+            cashAdd = Number(totalAmount || 0);
+          }
+        } else {
+          cashAdd = Number(totalAmount || 0);
+        }
+
+        await activeShift.update(
+          {
+            cashSalesTotal: Number(activeShift.cashSalesTotal || 0) + cashAdd,
+            cardSalesTotal: Number(activeShift.cardSalesTotal || 0) + cardAdd,
+            upiSalesTotal: Number(activeShift.upiSalesTotal || 0) + upiAdd,
+            totalSalesCount: Number(activeShift.totalSalesCount || 0) + 1,
+          },
+          { transaction }
+        );
+      }
+    }
 
     // Calculate subtotal and validate items
     // let subtotal = 0;
@@ -359,6 +405,21 @@ const createInvoice = async (req, res) => {
         transaction,
       });
 
+      // Audit Log Stock Movement
+      await StockMovement.create(
+        {
+          warehouseId: req.body.warehouseId || 1,
+          productId: item.productId,
+          movementType: 'SALE',
+          quantity: -Math.abs(Number(item.quantity)),
+          referenceType: 'SalesBill',
+          referenceId: billNumber,
+          notes: `Sale Invoice #${billNumber}`,
+          performedBy: userId || null,
+        },
+        { transaction }
+      );
+
       processedItems.push({
         saleId: saleId,
         productId: product.id,
@@ -382,7 +443,18 @@ const createInvoice = async (req, res) => {
     // Insert all items at once
     await SalesItem.bulkCreate(processedItems, { transaction });
 
-    // const calculatedTotalAmount = subtotal + tax - discount;
+    // Record double-entry Journal Entry (Debit: Cash/AR, Credit: Sales Revenue)
+    await recordAutomatedJournalEntry({
+      referenceType: 'SALE',
+      referenceId: billNumber,
+      amount: Number(totalAmount || 0),
+      partyId,
+      narration: `Automated Journal Entry for Sale Invoice #${billNumber}`,
+      debitAccountCode: paymentStatus === 'Paid' ? '1000' : '1100', // Cash vs AR
+      creditAccountCode: '4000', // Sales Revenue
+      transaction,
+    });
+
     await transaction.commit();
     return res.status(201).json(invoice);
   } catch (error) {

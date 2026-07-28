@@ -73,6 +73,11 @@ const Purchase = sequelize.define(
       type: DataTypes.DATE,
       allowNull: false,
     },
+
+    warehouseId: {
+      type: DataTypes.INTEGER,
+      defaultValue: 1,
+    },
   },
   {
     tableName: 'purchases',

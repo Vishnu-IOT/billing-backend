@@ -93,9 +93,28 @@ const Sale = sequelize.define(
       defaultValue: 'B2C',
     },
 
+    shiftId: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      references: {
+        model: 'pos_shifts',
+        key: 'id',
+      },
+    },
+
+    paymentDetails: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+    },
+
     saleDate: {
       type: DataTypes.DATE,
       defaultValue: DataTypes.NOW,
+    },
+
+    warehouseId: {
+      type: DataTypes.INTEGER,
+      defaultValue: 1,
     },
   },
   {

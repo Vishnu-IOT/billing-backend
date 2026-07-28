@@ -3,6 +3,7 @@ const PurchaseItem = require('../mysql-models/Purchase-Items');
 const Purchase = require('../mysql-models/PurchaseBill');
 const Product = require('../mysql-models/Product');
 const Party = require('../mysql-models/Party');
+const StockMovement = require('../mysql-models/StockMovement');
 const { Op } = require('sequelize');
 
 // @desc    Get all invoices
@@ -255,6 +256,20 @@ const createPurchase = async (req, res) => {
           where: { id: item.productId },
           transaction,
         }
+      );
+
+      // Audit Log Stock Movement
+      await StockMovement.create(
+        {
+          warehouseId: req.body.warehouseId || 1,
+          productId: item.productId,
+          movementType: 'PURCHASE',
+          quantity: Math.abs(Number(item.quantity)),
+          referenceType: 'PurchaseBill',
+          referenceId: invoiceNumber,
+          notes: `Purchase Bill #${invoiceNumber}`,
+        },
+        { transaction }
       );
 
       processedItems.push({

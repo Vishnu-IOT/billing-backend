@@ -37,6 +37,11 @@ app.use('/api/notifications', require('./routes/notificationRoutes'));
 app.use('/api/owners', require('./routes/ownerRoutes'));
 app.use('/api/settings', require('./routes/settingsRoutes'));
 app.use('/api/payments', require('./routes/paymentRoutes'));
+app.use('/api/pos', require('./routes/posRoutes'));
+app.use('/api/accounting', require('./routes/accountingRoutes'));
+app.use('/api/brands', require('./routes/brandRoutes'));
+app.use('/api/variants', require('./routes/variantRoutes'));
+app.use('/api/audit-logs', require('./routes/auditRoutes'));
 
 
 app.get('/', (req, res) => {
