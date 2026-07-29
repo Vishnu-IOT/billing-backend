@@ -52,6 +52,10 @@ const createProduct = async (req, res) => {
       batchNo,
       serialNo,
       expiryDate,
+      minStockLevel,
+      reorderLevel,
+      minOrderQuantity,
+      brandId,
     } = req.body;
 
     const product = await Product.create({
@@ -61,7 +65,7 @@ const createProduct = async (req, res) => {
       taxRate,
       salesPrice,
       purchasePrice,
-      // stockQuantity,
+      stockQuantity: stockQuantity || 0,
       discount,
       unit,
       barcode,
@@ -70,6 +74,10 @@ const createProduct = async (req, res) => {
       batchNo,
       serialNo,
       expiryDate: expiryDate || null,
+      minStockLevel: minStockLevel || 5,
+      reorderLevel: reorderLevel || 10,
+      minOrderQuantity: minOrderQuantity || 1,
+      brandId: brandId || null,
     });
 
     return res.status(201).json(product);

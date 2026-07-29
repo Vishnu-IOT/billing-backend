@@ -65,7 +65,7 @@ const Purchase = sequelize.define(
     },
 
     paymentStatus: {
-      type: DataTypes.ENUM('Paid', 'Unpaid', 'Overdue', 'Cancelled'),
+      type: DataTypes.ENUM('Paid', 'Unpaid', 'Partial', 'Overdue', 'Cancelled'),
       defaultValue: 'Unpaid',
     },
 

@@ -117,17 +117,23 @@ const getPurchaseInvoicesByDate = async (req, res) => {
   }
 };
 
-// @desc    Get single invoice
-// @route   GET /api/invoices/:id
+// @desc    Get single Purchase
+// @route   GET /api/purchase/:id
 // @access  Public
 const getPurchaseById = async (req, res) => {
   try {
-    const invoice = await Purchase.findById(req.params.id)
-      .populate('customer', 'name email phone address')
-      .populate('items.product', 'name description');
+    const invoice = await Purchase.findByPk(req.params.id, {
+      include: [
+        { model: Party, attributes: ['name', 'email', 'phone', 'address', 'gstin'] },
+        {
+          model: PurchaseItem,
+          include: [{ model: Product, attributes: ['name', 'HSNCode', 'unit'] }],
+        },
+      ],
+    });
 
     if (!invoice) {
-      return res.status(404).json({ message: 'Invoice not found' });
+      return res.status(404).json({ message: 'Purchase not found' });
     }
     return res.status(200).json(invoice);
   } catch (error) {

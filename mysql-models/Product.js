@@ -17,7 +17,6 @@ const Product = sequelize.define(
 
     HSNCode: {
       type: DataTypes.STRING,
-      unique: true,
       allowNull: true,
     },
 
@@ -57,17 +56,7 @@ const Product = sequelize.define(
     },
 
     unit: {
-      type: DataTypes.ENUM(
-        'pcs',
-        'kg',
-        'g',
-        'ltr',
-        'ml',
-        'box',
-        'packet',
-        'mtr',
-        'nos'
-      ),
+      type: DataTypes.STRING(20),
       defaultValue: 'pcs',
     },
 
@@ -99,6 +88,11 @@ const Product = sequelize.define(
     expiryDate: {
       type: DataTypes.DATEONLY,
       allowNull: true,
+    },
+
+    minStockLevel: {
+      type: DataTypes.INTEGER,
+      defaultValue: 5,
     },
 
     reorderLevel: {

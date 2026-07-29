@@ -21,6 +21,7 @@ const {
 router.post('/add-purchase', createPurchase);
 router.get('/get-purchase', getPurchase);
 router.get('/get-purchase-date', getPurchaseInvoicesByDate);
+router.get('/get-purchase/:id', getPurchaseById);
 router.delete('/delete-purchase/:id', deletePurchase);
 router.put('/updatebyid-purchase/:id', updatePurchaseById);
 router.post('/updatepaymentout-purchase/:id', updatePaymentStatusById);

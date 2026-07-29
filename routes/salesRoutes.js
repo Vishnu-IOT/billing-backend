@@ -20,10 +20,9 @@ const {
 router.post('/add-sales', createInvoice);
 router.get('/get-sales', getInvoices);
 router.get('/get-sales-date', getInvoicesByDate);
+router.get('/get-sales/:id', getInvoiceById);
 router.delete('/delete-sales/:id', deleteInvoice);
 router.put('/updatebyid-sales/:id', updateInvoiceById);
 router.post('/updatepaymentin-sales/:id', updatePaymentStatusById);
-
-// router.route('/:id').get(getInvoiceById);
 
 module.exports = router;
