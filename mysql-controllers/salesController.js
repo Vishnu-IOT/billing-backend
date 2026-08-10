@@ -37,7 +37,7 @@ const getInvoices = async (req, res) => {
         },
         {
           model: Customer,
-          attributes: ['name'],
+          // attributes: ['name'],
         },
         {
           model: User,
@@ -132,7 +132,7 @@ const getInvoicesByDate = async (req, res) => {
         },
         {
           model: Customer,
-          attributes: ['name'],
+          // attributes: ['name'],
         },
         {
           model: User,
@@ -164,7 +164,10 @@ const getInvoiceById = async (req, res) => {
     const invoice = await Sale.findByPk(req.params.id, {
       include: [
         { model: Party, attributes: ['name', 'email', 'phone', 'address', 'gstin'] },
-        { model: Customer, attributes: ['name', 'phone', 'email'] },
+        {
+          model: Customer,
+          // attributes: ['name', 'phone', 'email']
+        },
         { model: User, attributes: ['id', 'name'] },
         {
           model: SalesItem,
@@ -442,7 +445,7 @@ const createInvoice = async (req, res) => {
         netRate: item.netRate,
         batchNo: item.batchNumber || null,
         serialNo: item.serialNumber || null,
-        expiryDate: item.expiryDate || null,  
+        expiryDate: item.expiryDate || null,
         sku: item.sku || null,
         hsncode: item.hsnCode || null,
       });
