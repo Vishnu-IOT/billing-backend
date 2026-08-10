@@ -121,8 +121,8 @@ const updateStockBulk = async (req, res) => {
     }
 
     const updatePromises = items.map((item) => {
-      if (!item.id || item.stockQuantity == null) {
-        throw new Error('Missing id or stockQuantity');
+      if (!item.id) {
+        throw new Error('Missing item Id');
       }
 
       return Product.update(
