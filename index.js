@@ -42,6 +42,7 @@ app.use('/api/accounting', require('./routes/accountingRoutes'));
 app.use('/api/brands', require('./routes/brandRoutes'));
 app.use('/api/variants', require('./routes/variantRoutes'));
 app.use('/api/audit-logs', require('./routes/auditRoutes'));
+app.use('/api/app-settings', require('./routes/appSettingsRoutes'));
 
 
 app.get('/', (req, res) => {

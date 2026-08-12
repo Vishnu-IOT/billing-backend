@@ -2,6 +2,7 @@ const POSShift = require('../mysql-models/POSShift');
 const HoldBill = require('../mysql-models/HoldBill');
 const Sale = require('../mysql-models/SalesBill');
 const User = require('../mysql-models/Users');
+const { Op } = require('sequelize');
 
 // Get active shift for terminal/user
 const getCurrentShift = async (req, res) => {
@@ -105,6 +106,75 @@ const endShift = async (req, res) => {
   }
 };
 
+//get all shift details
+const getShiftDetails = async (req, res) => {
+  try {
+    const { userId, fromDate, toDate, status } = req.query;
+
+    const whereClause = {};
+
+    // User filter
+    if (userId) {
+      whereClause.userId = userId;
+    }
+
+    // Status filter
+    if (status) {
+      whereClause.status = status;
+    }
+
+    // From date + To date filter
+    if (fromDate && toDate) {
+      const startOfDay = new Date(`${fromDate}T00:00:00`);
+      const endOfDay = new Date(`${toDate}T23:59:59.999`);
+
+      whereClause.openedAt = {
+        [Op.between]: [startOfDay, endOfDay],
+      };
+    } else if (fromDate) {
+      const startOfDay = new Date(`${fromDate}T00:00:00`);
+
+      whereClause.openedAt = {
+        [Op.gte]: startOfDay,
+      };
+    } else if (toDate) {
+      const endOfDay = new Date(`${toDate}T23:59:59.999`);
+
+      whereClause.openedAt = {
+        [Op.lte]: endOfDay,
+      };
+    }
+
+    const shifts = await POSShift.findAll({
+      where: whereClause,
+
+      include: [
+        {
+          model: User,
+          as: 'user',
+          attributes: ['id', 'name', 'email'],
+        },
+      ],
+
+      order: [['openedAt', 'DESC']],
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Shift details fetched successfully',
+      count: shifts.length,
+      data: shifts,
+    });
+  } catch (error) {
+    console.error('Get Shift Details Error:', error);
+
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
 // Hold a cart in POS
 const holdCart = async (req, res) => {
   try {
@@ -178,7 +248,7 @@ const resumeHoldCart = async (req, res) => {
     let cartData = record.cartData;
     try {
       cartData = JSON.parse(record.cartData);
-    } catch (e) {}
+    } catch (e) { }
 
     return res.status(200).json({
       success: true,
@@ -218,6 +288,7 @@ module.exports = {
   getCurrentShift,
   startShift,
   endShift,
+  getShiftDetails,
   holdCart,
   getHoldCarts,
   resumeHoldCart,

@@ -9,6 +9,8 @@ const User = require('../mysql-models/Users');
 const POSShift = require('../mysql-models/POSShift');
 const StockMovement = require('../mysql-models/StockMovement');
 const { recordAutomatedJournalEntry } = require('./accountingController');
+const InvoiceSettings = require('../mysql-models/Invoice_Settings');
+const AppSettings = require('../mysql-models/AppSettings');
 
 // @desc    Get all invoices
 // @route   GET /api/invoices
@@ -33,7 +35,7 @@ const getInvoices = async (req, res) => {
       include: [
         {
           model: Party,
-          attributes: ['name'],
+          // attributes: ['name'],
         },
         {
           model: Customer,
@@ -128,7 +130,7 @@ const getInvoicesByDate = async (req, res) => {
       include: [
         {
           model: Party,
-          attributes: ['name'],
+          // attributes: ['name'],
         },
         {
           model: Customer,
@@ -163,7 +165,9 @@ const getInvoiceById = async (req, res) => {
   try {
     const invoice = await Sale.findByPk(req.params.id, {
       include: [
-        { model: Party, attributes: ['name', 'email', 'phone', 'address', 'gstin'] },
+        { model: Party,
+          //  attributes: ['name', 'email', 'phone', 'address', 'gstin'] 
+          },
         {
           model: Customer,
           // attributes: ['name', 'phone', 'email']
@@ -235,75 +239,70 @@ const handleB2CCustomer = async ({ phone, name, totalAmount, transaction }) => {
 // @desc    Create new invoice
 // @route   POST /api/invoices
 // @access  Public
-const getCurrentFY = () => {
-  const now = new Date();
-  const y = now.getFullYear();
-  const m = now.getMonth(); // April = 3
-  const startYear = m >= 3 ? y : y - 1;
-  // return `${startYear}-${startYear + 1}`;
-  return `${startYear}`;
-};
 
-const getFYShort = (fyYear) => {
-  const [start, end] = fyYear.split('-');
-  // return `${String(start).slice(-2)}/${String(end).slice(-2)}`;
-  return `${String(start)}`;
-  // '2025-2026' → '25/26'
-};
+// @desc    Format the financial year string based on app_settings.invoiceYearFormat
+//          Supports patterns like 'YYYY-YYYY', 'YYYY-YY', 'YY-YY', 'YYYY'
+const formatFinancialYear = (format, startYear, endYear) => {
+  const pattern = format || 'YY-YY';
 
-const buildInvoiceNumber = (fyYear, seq) => {
-  return `INV-${getFYShort(fyYear)}-${String(seq).padStart(4, '0')}`;
-  // → INV-25/26-0003
-};
+  let tokenIndex = 0;
 
-// ─── Atomic invoice number from Sales table (no counter table) ────────────
-const generateInvoiceNumber = async (transaction) => {
-  const fyYear = getCurrentFY();
-  const fyShortPattern = `INV-${getFYShort(fyYear)}-%`;
+  return pattern.replace(/Y+/g, (match) => {
+    const year = tokenIndex === 0 ? startYear : endYear;
+    tokenIndex += 1;
 
-  // Count existing bills for this FY — lock rows to block concurrent reads
-  const count = await Sale.count({
-    where: {
-      invoiceNumber: { [Op.like]: fyShortPattern },
-    },
-    transaction,
-    lock: transaction.LOCK.UPDATE,
+    // 4+ Y's -> full year (2026), otherwise -> last 2 digits (26)
+    return match.length >= 4 ? String(year) : String(year).slice(-2);
   });
-
-  const nextSeq = count + 1;
-  const billNumber = buildInvoiceNumber(fyYear, nextSeq);
-
-  return { billNumber, fyYear };
 };
 
 const createInvoice = async (req, res) => {
-  const transaction = await sequelize.transaction({
-    isolationLevel: Sequelize.Transaction.ISOLATION_LEVELS.SERIALIZABLE,
-  });
+  const transaction = await sequelize.transaction();
+
   try {
     const {
       name,
       phone,
-      partyId,
       userId,
-      shiftId,
-      paymentDetails,
-      global_discount_percentage = 0,
-      global_discount_amount = 0,
-      baseRate,
-      tax = 0,
-      totalAmount,
-      paymentStatus,
-      saleDate,
+      partyId,
       po_number,
       eway_bill,
-      bill_type,
+      global_discount_percentage = 0,
+      global_discount_amount = 0,
+      baseRate = 0,
+      tax = 0,
+      totalAmount = 0,
+      paymentStatus = 'Unpaid',
+      paymentMethod,
+      paymentDetails,
+      saleDate,
+      bill_type = 'B2C',
+      shiftId,
+      warehouseId = 1,
       items,
+      companyId,
     } = req.body;
 
-    if (!items || items.length === 0) {
+    // -----------------------------------------
+    // 1. Basic validation
+    // -----------------------------------------
+
+    if (!userId) {
       await transaction.rollback();
-      return res.status(400).json({ message: 'No invoice items' });
+
+      return res.status(400).json({
+        success: false,
+        message: 'User ID is required',
+      });
+    }
+
+    if (!items || !Array.isArray(items) || items.length === 0) {
+      await transaction.rollback();
+
+      return res.status(400).json({
+        success: false,
+        message: 'At least one invoice item is required',
+      });
     }
 
     let customerId = null;
@@ -317,164 +316,260 @@ const createInvoice = async (req, res) => {
       customerId = customer?.id || null;
     }
 
-    const { billNumber, fyYear } = await generateInvoiceNumber(transaction);
+    if (!companyId) {
+      await transaction.rollback();
 
-    const formattedPaymentDetails = paymentDetails
-      ? typeof paymentDetails === 'string'
-        ? paymentDetails
-        : JSON.stringify(paymentDetails)
-      : null;
-
-    const invoice = await Sale.create(
-      {
-        invoiceNumber: billNumber,
-        partyId,
-        customerId,
-        userId,
-        shiftId: shiftId || null,
-        paymentDetails: formattedPaymentDetails,
-        global_discount_percentage,
-        global_discount_amount,
-        baseRate,
-        tax,
-        totalAmount,
-        paymentStatus,
-        saleDate,
-        po_number,
-        eway_bill,
-        bill_type,
-      },
-      {
-        transaction,
-        include: Party,
-      }
-    );
-
-    // Update POS Shift summary if shiftId is provided
-    if (shiftId) {
-      const activeShift = await POSShift.findByPk(shiftId, { transaction });
-      if (activeShift) {
-        let cashAdd = 0;
-        let cardAdd = 0;
-        let upiAdd = 0;
-
-        if (paymentDetails) {
-          const pd = typeof paymentDetails === 'string' ? JSON.parse(paymentDetails) : paymentDetails;
-          cashAdd = Number(pd.cash || 0);
-          cardAdd = Number(pd.card || 0);
-          upiAdd = Number(pd.upi || 0);
-          // If simple single status without split details:
-          if (!pd.cash && !pd.card && !pd.upi) {
-            cashAdd = Number(totalAmount || 0);
-          }
-        } else {
-          cashAdd = Number(totalAmount || 0);
-        }
-
-        await activeShift.update(
-          {
-            cashSalesTotal: Number(activeShift.cashSalesTotal || 0) + cashAdd,
-            cardSalesTotal: Number(activeShift.cardSalesTotal || 0) + cardAdd,
-            upiSalesTotal: Number(activeShift.upiSalesTotal || 0) + upiAdd,
-            totalSalesCount: Number(activeShift.totalSalesCount || 0) + 1,
-          },
-          { transaction }
-        );
-      }
-    }
-
-    // Calculate subtotal and validate items
-    // let subtotal = 0;
-    const saleId = invoice.id;
-
-    const processedItems = [];
-
-    for (let i = 0; i < items.length; i++) {
-      const item = items[i];
-
-      // find product in products table
-      const product = await Product.findByPk(item.productId);
-
-      if (!product) {
-        return res
-          .status(404)
-          .json({ message: `Product not found: ${item.productId}` });
-      }
-
-      // const price = item.price;
-      // const quantity = item.quantity;
-
-      // const total = quantity * price;
-
-      // subtotal += total;
-
-      await Product.decrement('stockQuantity', {
-        by: item.quantity,
-        where: {
-          id: item.productId,
-        },
-        transaction,
-      });
-
-      // Audit Log Stock Movement
-      await StockMovement.create(
-        {
-          warehouseId: req.body.warehouseId || 1,
-          productId: item.productId,
-          movementType: 'SALE',
-          quantity: -Math.abs(Number(item.quantity)),
-          referenceType: 'SalesBill',
-          referenceId: billNumber,
-          notes: `Sale Invoice #${billNumber}`,
-          performedBy: userId || null,
-        },
-        { transaction }
-      );
-
-      processedItems.push({
-        saleId: saleId,
-        productId: product.id,
-        productName: item.productName,
-        quantity: item.quantity,
-        price: item.price,
-        discountPercentage: item.discountPercentage,
-        discountAmount: item.discountAmount,
-        baseRate: item.baseRate,
-        taxPercentage: item.taxPercentage,
-        taxAmount: item.taxAmount,
-        netRate: item.netRate,
-        batchNo: item.batchNumber || null,
-        serialNo: item.serialNumber || null,
-        expiryDate: item.expiryDate || null,
-        sku: item.sku || null,
-        hsncode: item.hsnCode || null,
+      return res.status(400).json({
+        success: false,
+        message: 'Company ID is required',
       });
     }
 
-    // Insert all items at once
-    await SalesItem.bulkCreate(processedItems, { transaction });
+    // -----------------------------------------
+    // 2. Get app settings (this is where the prefix comes from)
+    // -----------------------------------------
 
-    // Record double-entry Journal Entry (Debit: Cash/AR, Credit: Sales Revenue)
-    await recordAutomatedJournalEntry({
-      referenceType: 'SALE',
-      referenceId: billNumber,
-      amount: Number(totalAmount || 0),
-      partyId,
-      narration: `Automated Journal Entry for Sale Invoice #${billNumber}`,
-      debitAccountCode: paymentStatus === 'Paid' ? '1000' : '1100', // Cash vs AR
-      creditAccountCode: '4000', // Sales Revenue
+    const appSettings = await AppSettings.findOne({
+      where: { companyId },
       transaction,
     });
 
+    // -----------------------------------------
+    // 3. Get (or create) invoice settings row - this only tracks the running sequence
+    // -----------------------------------------
+
+    let invoiceSettings = await InvoiceSettings.findOne({
+      where: { companyId },
+      transaction,
+      lock: transaction.LOCK.UPDATE,
+    });
+
+    if (!invoiceSettings) {
+      invoiceSettings = await InvoiceSettings.create(
+        {
+          companyId,
+          invoice_prefix: appSettings?.invoicePrefix || 'INV',
+          next_sequence_no: Number(appSettings?.invoiceStartingNumber || 1),
+        },
+        { transaction }
+      );
+    }
+
+    // -----------------------------------------
+    // 4. Get current sequence (last sequence, from invoice_settings)
+    // -----------------------------------------
+
+    const sequenceNumber = Number(invoiceSettings.next_sequence_no || 1);
+
+    // -----------------------------------------
+    // 5. Get prefix (from app_settings, falling back to invoice_settings)
+    // -----------------------------------------
+
+    const prefix =
+      appSettings?.invoicePrefix ||
+      invoiceSettings.invoice_prefix ||
+      'INV';
+
+    // -----------------------------------------
+    // 5. Get financial year (format driven by app_settings.invoiceYearFormat)
+    // -----------------------------------------
+
+    const now = new Date();
+
+    const currentYear = now.getFullYear();
+    const currentMonth = now.getMonth() + 1;
+
+    let financialYear;
+
+    if (currentMonth >= 4) {
+      financialYear = formatFinancialYear(
+        appSettings?.invoiceYearFormat,
+        currentYear,
+        currentYear + 1
+      );
+    } else {
+      financialYear = formatFinancialYear(
+        appSettings?.invoiceYearFormat,
+        currentYear - 1,
+        currentYear
+      );
+    }
+
+    // -----------------------------------------
+    // 6. Generate invoice number
+    // -----------------------------------------
+
+    const invoiceNumber =
+      `${prefix}/${financialYear}/${String(sequenceNumber).padStart(4, '0')}`;
+
+    // Example:
+    // INV/2026-27/000001
+    // INV/2026-27/000002
+    // INV/2026-27/000003
+
+    // -----------------------------------------
+    // 7. Increment sequence
+    // -----------------------------------------
+
+    await invoiceSettings.update(
+      {
+        next_sequence_no: sequenceNumber + 1,
+      },
+      {
+        transaction,
+      }
+    );
+
+    // -----------------------------------------
+    // 8. Create Sale
+    // -----------------------------------------
+
+    const invoice = await Sale.create(
+      {
+        invoiceNumber,
+
+        partyId: partyId || null,
+        customerId: customerId || null,
+        userId,
+        po_number: po_number || null,
+        eway_bill: eway_bill || null,
+
+        global_discount_percentage:
+          Number(global_discount_percentage || 0),
+
+        global_discount_amount:
+          Number(global_discount_amount || 0),
+
+        baseRate: Number(baseRate || 0),
+        tax: Number(tax || 0),
+        totalAmount: Number(totalAmount || 0),
+
+        paymentStatus,
+        bill_type,
+
+        shiftId: shiftId || null,
+
+        paymentDetails: paymentDetails
+          ? JSON.stringify(paymentDetails)
+          : null,
+
+        saleDate: saleDate || new Date(),
+
+        warehouseId:
+          warehouseId || 1,
+      },
+      {
+        transaction,
+      }
+    );
+
+    // -----------------------------------------
+    // 9. Create invoice items
+    // -----------------------------------------
+
+    for (const item of items) {
+      const product = await Product.findByPk(
+        item.productId,
+        { transaction }
+      );
+
+      if (!product) {
+        throw new Error(
+          `Product not found: ${item.productId}`
+        );
+      }
+
+      await SalesItem.create(
+        {
+          saleId: invoice.id,
+
+          productId: item.productId,
+
+          productName: item.productName,
+          hsnCode: item.hsnCode,
+          sku: item.sku,
+
+          batchNumber:
+            item.batchNumber || null,
+
+          expiryDate:
+            item.expiryDate || null,
+
+          serialNumber:
+            item.serialNumber || null,
+
+          notes:
+            item.notes || null,
+
+          quantity:
+            Number(item.quantity || 0),
+
+          price:
+            Number(item.price || 0),
+
+          discountPercentage:
+            Number(item.discountPercentage || 0),
+
+          discountAmount:
+            Number(item.discountAmount || 0),
+
+          baseRate:
+            Number(item.baseRate || 0),
+
+          taxPercentage:
+            Number(item.taxPercentage || 0),
+
+          taxAmount:
+            Number(item.taxAmount || 0),
+
+          netRate:
+            Number(item.netRate || 0),
+        },
+        {
+          transaction,
+        }
+      );
+    }
+
+    // -----------------------------------------
+    // 10. Commit transaction
+    // -----------------------------------------
+
     await transaction.commit();
-    return res.status(201).json(invoice);
+
+    // -----------------------------------------
+    // 11. Response
+    // -----------------------------------------
+
+    return res.status(201).json({
+      success: true,
+      message: 'Invoice created successfully',
+
+      data: {
+        id: invoice.id,
+        invoiceNumber: invoice.invoiceNumber,
+        saleDate: invoice.saleDate,
+        totalAmount: invoice.totalAmount,
+        paymentStatus: invoice.paymentStatus,
+        bill_type: invoice.bill_type,
+      },
+    });
+
   } catch (error) {
+    // -----------------------------------------
+    // Rollback on error
+    // -----------------------------------------
+
     await transaction.rollback();
 
-    return res.status(400).json({ message: error.message });
+    console.error('Create Invoice Error:', error);
+
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
   }
 };
-
 // @access  Public
 // @desc    Update invoice
 // @route   PUT /api/invoices/:id

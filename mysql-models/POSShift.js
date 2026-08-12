@@ -1,5 +1,6 @@
 const { DataTypes } = require('sequelize');
 const sequelize = require('../config/sqldb');
+const User = require('./Users');
 
 const POSShift = sequelize.define(
   'POSShift',
@@ -73,4 +74,13 @@ const POSShift = sequelize.define(
   }
 );
 
+POSShift.belongsTo(User, {
+  foreignKey: 'userId',
+  as: 'user',
+});
+
+User.hasMany(POSShift, {
+  foreignKey: 'userId',
+  as: 'posShifts',
+});
 module.exports = POSShift;

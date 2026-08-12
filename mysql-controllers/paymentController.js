@@ -8,27 +8,61 @@ const { Op } = require('sequelize');
 // Payment In Handlers
 const getPaymentsIn = async (req, res) => {
   try {
-    const { partyId, saleId, startDate, endDate } = req.query;
-    let whereClause = {};
+    const {
+      partyId,
+      saleId,
+      startDate,
+      endDate,
+    } = req.query;
 
-    if (partyId) whereClause.partyId = partyId;
-    if (saleId) whereClause.saleId = saleId;
-    if (startDate && endDate) {
-      whereClause.paymentDate = { [Op.between]: [new Date(startDate), new Date(endDate)] };
+    const whereClause = {};
+
+    if (partyId) {
+      whereClause.partyId = partyId;
+    }
+
+    if (saleId) {
+      whereClause.saleId = saleId;
+    }
+
+    // Date filter
+    if (startDate || endDate) {
+      const dateFilter = {};
+
+      if (startDate) {
+        dateFilter[Op.gte] = `${startDate} 00:00:00`;
+      }
+
+      if (endDate) {
+        dateFilter[Op.lte] = `${endDate} 23:59:59`;
+      }
+
+      whereClause.paymentDate = dateFilter;
     }
 
     const payments = await PaymentIn.findAll({
       where: whereClause,
       include: [
-        { model: Party, attributes: ['name'] },
-        { model: Sale, attributes: ['invoiceNumber'] },
+        {
+          model: Party,
+          attributes: ['name'],
+        },
+        {
+          model: Sale,
+          attributes: ['invoiceNumber'],
+        },
       ],
       order: [['paymentDate', 'DESC']],
     });
 
     return res.status(200).json(payments);
+
   } catch (error) {
-    return res.status(500).json({ message: error.message });
+    console.error('Get Payments In Error:', error);
+
+    return res.status(500).json({
+      message: error.message,
+    });
   }
 };
 
@@ -80,27 +114,61 @@ const deletePaymentIn = async (req, res) => {
 // Payment Out Handlers
 const getPaymentsOut = async (req, res) => {
   try {
-    const { partyId, purchaseId, startDate, endDate } = req.query;
-    let whereClause = {};
+    const {
+      partyId,
+      purchaseId,
+      startDate,
+      endDate,
+    } = req.query;
 
-    if (partyId) whereClause.partyId = partyId;
-    if (purchaseId) whereClause.purchaseId = purchaseId;
-    if (startDate && endDate) {
-      whereClause.paymentDate = { [Op.between]: [new Date(startDate), new Date(endDate)] };
+    const whereClause = {};
+
+    if (partyId) {
+      whereClause.partyId = partyId;
+    }
+
+    if (purchaseId) {
+      whereClause.purchaseId = purchaseId;
+    }
+
+    // Date filter
+    if (startDate || endDate) {
+      const dateFilter = {};
+
+      if (startDate) {
+        dateFilter[Op.gte] = `${startDate} 00:00:00`;
+      }
+
+      if (endDate) {
+        dateFilter[Op.lte] = `${endDate} 23:59:59`;
+      }
+
+      whereClause.paymentDate = dateFilter;
     }
 
     const payments = await PaymentOut.findAll({
       where: whereClause,
       include: [
-        { model: Party, attributes: ['name'] },
-        { model: Purchase, attributes: ['invoiceNumber'] },
+        {
+          model: Party,
+          attributes: ['name'],
+        },
+        {
+          model: Purchase,
+          attributes: ['invoiceNumber'],
+        },
       ],
       order: [['paymentDate', 'DESC']],
     });
 
     return res.status(200).json(payments);
+
   } catch (error) {
-    return res.status(500).json({ message: error.message });
+    console.error('Get Payments Out Error:', error);
+
+    return res.status(500).json({
+      message: error.message,
+    });
   }
 };
 

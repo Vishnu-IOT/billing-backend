@@ -8,11 +8,13 @@ const {
   getHoldCarts,
   resumeHoldCart,
   cancelHoldCart,
+  getShiftDetails,
 } = require('../mysql-controllers/posController');
 
 router.get('/shifts/current', getCurrentShift);
 router.post('/shifts/start', startShift);
 router.post('/shifts/end', endShift);
+router.get('/shifts/all-shifts', getShiftDetails);
 
 router.post('/hold', holdCart);
 router.get('/hold', getHoldCarts);
