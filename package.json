@@ -5,10 +5,10 @@
   "license": "ISC",
   "author": "vishnu",
   "type": "commonjs",
-  "main": "index.js",
+  "main": "server.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node index.js",
+    "start": "node server.js",
     "migrate": "sequelize-cli db:migrate",
     "migrate:undo": "sequelize-cli db:migrate:undo",
     "migrate:undo:all": "sequelize-cli db:migrate:undo:all",
