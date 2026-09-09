@@ -91,6 +91,7 @@ const getPurchaseInvoicesByDate = async (req, res) => {
         'baseRate',
         'invoiceNumber',
         'totalAmount',
+        'amountPaid',
         'paymentStatus',
         [sequelize.literal(`'Purchase'`), 'type'],
       ],
@@ -144,39 +145,118 @@ const getPurchaseById = async (req, res) => {
 // @access  Public
 // @desc    Update invoice
 // @route   PUT /api/invoices/:id
+// @desc    Record a payment against a purchase bill (supports partial payments)
+// @route   PUT /api/purchases/:id/payment-status
+// @access  Public
 const updatePaymentStatusById = async (req, res) => {
+  const transaction = await sequelize.transaction();
   try {
     const { id } = req.params;
-    const { paymentStatus, amount, paymentMode, referenceNo, notes } = req.body;
+    const { amount, paymentMode, referenceNo, notes } = req.body;
 
-    if (!paymentStatus) {
-      return res.status(400).json({ message: 'Status not found' });
+    const paymentAmount = Number(amount);
+    if (!paymentAmount || paymentAmount <= 0) {
+      await transaction.rollback();
+      return res.status(400).json({ message: 'A positive payment amount is required' });
     }
 
-    const invoice = await Purchase.findByPk(id);
-
+    const invoice = await Purchase.findByPk(id, { transaction, lock: transaction.LOCK.UPDATE });
     if (!invoice) {
-      return res.status(404).json({ message: 'Invoice not found' });
+      await transaction.rollback();
+      return res.status(404).json({ message: 'Purchase bill not found' });
     }
 
-    // 5️⃣ Update invoice
-    await invoice.update({
-      paymentStatus,
-    });
+    const totalAmount = Number(invoice.totalAmount || 0);
+    const alreadyPaid = Number(invoice.amountPaid || 0);
+    const newAmountPaid = alreadyPaid + paymentAmount;
 
-    // Record PaymentOut history
+    if (newAmountPaid > totalAmount) {
+      await transaction.rollback();
+      return res.status(400).json({
+        message: `Payment exceeds balance due. Balance due is ${(totalAmount - alreadyPaid).toFixed(2)}`,
+      });
+    }
+
+    // status is always derived from actual payments — never trusted from the client
+    let newStatus;
+    if (newAmountPaid <= 0) {
+      newStatus = 'Unpaid';
+    } else if (newAmountPaid < totalAmount) {
+      newStatus = 'Partial';
+    } else {
+      newStatus = 'Paid';
+    }
+
+    await invoice.update(
+      { amountPaid: newAmountPaid, paymentStatus: newStatus },
+      { transaction }
+    );
+
+    // Record PaymentOut history — this is the ledger; invoice fields are just a cached summary of it
     const PaymentOut = require('../mysql-models/PaymentOut');
-    await PaymentOut.create({
-      purchaseId: invoice.id,
-      partyId: invoice.partyId,
-      paymentDate: new Date(),
-      amount: amount || invoice.totalAmount || 0,
-      paymentMode: paymentMode || 'Cash',
-      referenceNo: referenceNo || null,
-      notes: notes || `Payment status updated to ${paymentStatus}`,
+    await PaymentOut.create(
+      {
+        purchaseId: invoice.id,
+        partyId: invoice.partyId,
+        paymentDate: new Date(),
+        amount: paymentAmount,
+        paymentMode: paymentMode || 'Cash',
+        referenceNo: referenceNo || null,
+        notes: notes || `Payment of ${paymentAmount} recorded (status: ${newStatus})`,
+      },
+      { transaction }
+    );
+
+    await transaction.commit();
+
+    return res.status(200).json({
+      success: true,
+      message: 'Payment recorded successfully',
+      data: {
+        paymentStatus: newStatus,
+        amountPaid: newAmountPaid,
+        balanceDue: totalAmount - newAmountPaid,
+      },
+    });
+  } catch (error) {
+    await transaction.rollback();
+    return res.status(500).json({ message: error.message });
+  }
+};
+
+// @desc    Full payment history for one purchase bill (running balance)
+// @route   GET /api/purchases/:id/payments
+const getPaymentHistoryByPurchase = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const PaymentOut = require('../mysql-models/PaymentOut');
+
+    const invoice = await Purchase.findByPk(id, { attributes: ['id', 'totalAmount', 'amountPaid', 'paymentStatus'] });
+    if (!invoice) {
+      return res.status(404).json({ message: 'Purchase bill not found' });
+    }
+
+    const payments = await PaymentOut.findAll({
+      where: { purchaseId: id },
+      order: [['paymentDate', 'ASC']],
     });
 
-    return res.status(200).json({ message: 'Payment Out updated successfully' });
+    let running = 0;
+    const history = payments.map((p) => {
+      running += Number(p.amount);
+      return { ...p.toJSON(), runningPaid: running };
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        totalAmount: Number(invoice.totalAmount),
+        amountPaid: Number(invoice.amountPaid),
+        balanceDue: Number(invoice.totalAmount) - Number(invoice.amountPaid),
+        paymentStatus: invoice.paymentStatus,
+        payments: history,
+      },
+    });
   } catch (error) {
     return res.status(500).json({ message: error.message });
   }
@@ -543,6 +623,7 @@ module.exports = {
   getPurchaseInvoicesByDate,
   getPurchaseById,
   updatePaymentStatusById,
+  getPaymentHistoryByPurchase,
   createPurchase,
   updatePurchaseById,
   updatePurchaseStatus,

@@ -24,6 +24,7 @@ const getInvoices = async (req, res) => {
         'partyId',
         'invoiceNumber',
         'totalAmount',
+        'amountPaid',
         'paymentStatus',
         'bill_type',
         'po_number',
@@ -119,6 +120,7 @@ const getInvoicesByDate = async (req, res) => {
         'baseRate',
         'invoiceNumber',
         'totalAmount',
+        'amountPaid',
         'paymentStatus',
         'bill_type',
         'po_number',
@@ -254,6 +256,40 @@ const formatFinancialYear = (format, startYear, endYear) => {
     // 4+ Y's -> full year (2026), otherwise -> last 2 digits (26)
     return match.length >= 4 ? String(year) : String(year).slice(-2);
   });
+};
+
+// @desc    Peek at what the next invoice number would look like — read only,
+//          never touches next_sequence_no. Used by the Settings "Live Preview".
+// @route   GET /api/invoices/preview-next-number?companyId=1
+const previewNextInvoiceNumber = async (req, res) => {
+  try {
+    const companyId = req.query.companyId || 1;
+
+    const appSettings = await AppSettings.findOne({ where: { companyId } });
+    const invoiceSettings = await InvoiceSettings.findOne({ where: { companyId } });
+
+    const sequenceNumber = Number(
+      invoiceSettings?.next_sequence_no ?? appSettings?.invoiceStartingNumber ?? 1
+    );
+
+    const prefix =
+      appSettings?.invoicePrefix || invoiceSettings?.invoice_prefix || 'INV';
+
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const currentMonth = now.getMonth() + 1;
+
+    const financialYear =
+      currentMonth >= 4
+        ? formatFinancialYear(appSettings?.invoiceYearFormat, currentYear, currentYear + 1)
+        : formatFinancialYear(appSettings?.invoiceYearFormat, currentYear - 1, currentYear);
+
+    const nextInvoiceNumber = `${prefix}/${financialYear}/${String(sequenceNumber).padStart(4, '0')}`;
+
+    return res.status(200).json({ success: true, data: { nextInvoiceNumber, sequenceNumber, prefix, financialYear } });
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
 };
 
 const createInvoice = async (req, res) => {
@@ -710,39 +746,118 @@ const updateInvoiceById = async (req, res) => {
 // @access  Public
 // @desc    Update invoice
 // @route   PUT /api/invoices/:id
+// @desc    Record a payment against an invoice (supports partial payments)
+// @route   PUT /api/invoices/:id/payment-status
+// @access  Public
 const updatePaymentStatusById = async (req, res) => {
+  const transaction = await sequelize.transaction();
   try {
     const { id } = req.params;
-    const { paymentStatus, amount, paymentMode, referenceNo, notes } = req.body;
+    const { amount, paymentMode, referenceNo, notes } = req.body;
 
-    if (!paymentStatus) {
-      return res.status(400).json({ message: 'Status not found' });
+    const paymentAmount = Number(amount);
+    if (!paymentAmount || paymentAmount <= 0) {
+      await transaction.rollback();
+      return res.status(400).json({ message: 'A positive payment amount is required' });
     }
 
-    const invoice = await Sale.findByPk(id);
+    const invoice = await Sale.findByPk(id, { transaction, lock: transaction.LOCK.UPDATE });
+    if (!invoice) {
+      await transaction.rollback();
+      return res.status(404).json({ message: 'Invoice not found' });
+    }
 
+    const totalAmount = Number(invoice.totalAmount || 0);
+    const alreadyPaid = Number(invoice.amountPaid || 0);
+    const newAmountPaid = alreadyPaid + paymentAmount;
+
+    if (newAmountPaid > totalAmount) {
+      await transaction.rollback();
+      return res.status(400).json({
+        message: `Payment exceeds balance due. Balance due is ${(totalAmount - alreadyPaid).toFixed(2)}`,
+      });
+    }
+
+    // status is always derived from actual payments — never trusted from the client
+    let newStatus;
+    if (newAmountPaid <= 0) {
+      newStatus = 'Unpaid';
+    } else if (newAmountPaid < totalAmount) {
+      newStatus = 'Partial';
+    } else {
+      newStatus = 'Paid';
+    }
+
+    await invoice.update(
+      { amountPaid: newAmountPaid, paymentStatus: newStatus },
+      { transaction }
+    );
+
+    // Record PaymentIn history — this is the ledger; invoice fields are just a cached summary of it
+    const PaymentIn = require('../mysql-models/PaymentIn');
+    await PaymentIn.create(
+      {
+        saleId: invoice.id,
+        partyId: invoice.partyId,
+        paymentDate: new Date(),
+        amount: paymentAmount,
+        paymentMode: paymentMode || 'Cash',
+        referenceNo: referenceNo || null,
+        notes: notes || `Payment of ${paymentAmount} recorded (status: ${newStatus})`,
+      },
+      { transaction }
+    );
+
+    await transaction.commit();
+
+    return res.status(200).json({
+      success: true,
+      message: 'Payment recorded successfully',
+      data: {
+        paymentStatus: newStatus,
+        amountPaid: newAmountPaid,
+        balanceDue: totalAmount - newAmountPaid,
+      },
+    });
+  } catch (error) {
+    await transaction.rollback();
+    return res.status(500).json({ message: error.message });
+  }
+};
+
+// @desc    Full payment history for one invoice (running balance)
+// @route   GET /api/invoices/:id/payments
+const getPaymentHistoryBySale = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const PaymentIn = require('../mysql-models/PaymentIn');
+
+    const invoice = await Sale.findByPk(id, { attributes: ['id', 'totalAmount', 'amountPaid', 'paymentStatus'] });
     if (!invoice) {
       return res.status(404).json({ message: 'Invoice not found' });
     }
 
-    // 5️⃣ Update invoice
-    await invoice.update({
-      paymentStatus,
+    const payments = await PaymentIn.findAll({
+      where: { saleId: id },
+      order: [['paymentDate', 'ASC']],
     });
 
-    // Record PaymentIn history
-    const PaymentIn = require('../mysql-models/PaymentIn');
-    await PaymentIn.create({
-      saleId: invoice.id,
-      partyId: invoice.partyId,
-      paymentDate: new Date(),
-      amount: amount || invoice.totalAmount || 0,
-      paymentMode: paymentMode || 'Cash',
-      referenceNo: referenceNo || null,
-      notes: notes || `Payment status updated to ${paymentStatus}`,
+    let running = 0;
+    const history = payments.map((p) => {
+      running += Number(p.amount);
+      return { ...p.toJSON(), runningPaid: running };
     });
 
-    return res.status(200).json({ message: 'Payment In updated successfully' });
+    return res.status(200).json({
+      success: true,
+      data: {
+        totalAmount: Number(invoice.totalAmount),
+        amountPaid: Number(invoice.amountPaid),
+        balanceDue: Number(invoice.totalAmount) - Number(invoice.amountPaid),
+        paymentStatus: invoice.paymentStatus,
+        payments: history,
+      },
+    });
   } catch (error) {
     return res.status(500).json({ message: error.message });
   }
@@ -820,6 +935,8 @@ module.exports = {
   getInvoicesByDate,
   getInvoiceById,
   updatePaymentStatusById,
+  getPaymentHistoryBySale,
+  previewNextInvoiceNumber,
   createInvoice,
   deleteInvoice,
   updateInvoiceById,

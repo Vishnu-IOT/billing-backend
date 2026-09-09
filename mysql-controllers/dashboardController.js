@@ -62,30 +62,48 @@ const dashboardData = async (req, res) => {
       )?.stockValue || 0;
 
     // ======================
-    // LAST 6 MONTH SALES
+    // LAST 12 MONTHS SALES + PURCHASE (bar chart)
     // ======================
-    // const salesChart = await Sale.findAll({
-    //   attributes: [
-    //     [fn('DATE_FORMAT', col('saleDate'), '%b %Y'), 'month'],
-    //     [fn('SUM', col('totalAmount')), 'amount'],
-    //   ],
-    //   group: [fn('DATE_FORMAT', col('saleDate'), '%Y-%m')],
-    //   order: [[col('saleDate'), 'ASC']],
-    //   raw: true,
-    // });
+    const now = new Date();
+    const chartMonths = 12;
+    const chartStart = new Date(now.getFullYear(), now.getMonth() - (chartMonths - 1), 1);
 
-    // ======================
-    // LAST 6 MONTH PURCHASE
-    // ======================
-    // const purchaseChart = await Sale.findAll({
-    //   attributes: [
-    //     [fn('DATE_FORMAT', col('purchaseDate'), '%b %Y'), 'month'],
-    //     [fn('SUM', col('totalAmount')), 'amount'],
-    //   ],
-    //   group: [fn('DATE_FORMAT', col('purchaseDate'), '%Y-%m')],
-    //   order: [[col('purchaseDate'), 'ASC']],
-    //   raw: true,
-    // });
+    const salesChartRows = await Sale.findAll({
+      attributes: [
+        [fn('DATE_FORMAT', col('saleDate'), '%Y-%m'), 'monthKey'],
+        [fn('SUM', col('totalAmount')), 'amount'],
+      ],
+      where: { saleDate: { [Op.gte]: chartStart } },
+      group: [fn('DATE_FORMAT', col('saleDate'), '%Y-%m')],
+      raw: true,
+    });
+
+    const purchaseChartRows = await Purchase.findAll({
+      attributes: [
+        [fn('DATE_FORMAT', col('purchaseDate'), '%Y-%m'), 'monthKey'],
+        [fn('SUM', col('totalAmount')), 'amount'],
+      ],
+      where: { purchaseDate: { [Op.gte]: chartStart } },
+      group: [fn('DATE_FORMAT', col('purchaseDate'), '%Y-%m')],
+      raw: true,
+    });
+
+    const salesByMonth = Object.fromEntries(salesChartRows.map((r) => [r.monthKey, Number(r.amount) || 0]));
+    const purchaseByMonth = Object.fromEntries(purchaseChartRows.map((r) => [r.monthKey, Number(r.amount) || 0]));
+
+    // build a continuous run of the last 12 months so months with zero activity still appear on the chart
+    const chartData = [];
+    for (let i = chartMonths - 1; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      const label = d.toLocaleString('en-US', { month: 'short', year: 'numeric' });
+      chartData.push({
+        month: label,
+        monthKey,
+        sales: salesByMonth[monthKey] || 0,
+        purchase: purchaseByMonth[monthKey] || 0,
+      });
+    }
 
     // ======================
     // RECENT 3 SALES
@@ -121,10 +139,7 @@ const dashboardData = async (req, res) => {
         profit: Number(profit),
         stockValue: Number(stockValue),
       },
-      //   chartData: {
-      //     sales: salesChart,
-      //     purchase: purchaseChart,
-      //   },
+      chartData,
       recentSales,
     });
   } catch (error) {

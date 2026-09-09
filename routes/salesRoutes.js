@@ -15,14 +15,18 @@ const {
   updateInvoiceById,
   getInvoicesByDate,
   updatePaymentStatusById,
+  getPaymentHistoryBySale,
+  previewNextInvoiceNumber,
 } = require('../mysql-controllers/salesController');
 
 router.post('/add-sales', createInvoice);
 router.get('/get-sales', getInvoices);
 router.get('/get-sales-date', getInvoicesByDate);
+router.get('/preview-next-number', previewNextInvoiceNumber);
 router.get('/get-sales/:id', getInvoiceById);
 router.delete('/delete-sales/:id', deleteInvoice);
 router.put('/updatebyid-sales/:id', updateInvoiceById);
 router.post('/updatepaymentin-sales/:id', updatePaymentStatusById);
+router.get('/payments-sales/:id', getPaymentHistoryBySale);
 
 module.exports = router;

@@ -14,6 +14,7 @@ const {
   createPurchase,
   updatePurchaseStatus,
   updatePaymentStatusById,
+  getPaymentHistoryByPurchase,
   deletePurchase,
   updatePurchaseById,
 } = require('../mysql-controllers/purchaseController');
@@ -25,6 +26,7 @@ router.get('/get-purchase/:id', getPurchaseById);
 router.delete('/delete-purchase/:id', deletePurchase);
 router.put('/updatebyid-purchase/:id', updatePurchaseById);
 router.post('/updatepaymentout-purchase/:id', updatePaymentStatusById);
+router.get('/payments-purchase/:id', getPaymentHistoryByPurchase);
 
 // router.route('/').get(getInvoices).post(createInvoice);
 // router.route('/:id').get(getInvoiceById);

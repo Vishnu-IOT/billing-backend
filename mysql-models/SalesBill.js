@@ -87,6 +87,12 @@ const Sale = sequelize.define(
       defaultValue: 'Unpaid',
     },
 
+    amountPaid: {
+      type: DataTypes.DECIMAL(12, 2),
+      allowNull: false,
+      defaultValue: 0.0,
+    },
+
     bill_type: {
       type: DataTypes.ENUM('B2C', 'B2B'),
       allowNull: false,

@@ -119,6 +119,15 @@ DocumentItem.belongsTo(Document, {
   foreignKey: 'documentId',
 });
 
+// DocumentItem → Product
+DocumentItem.belongsTo(Product, {
+  foreignKey: 'productId',
+});
+
+Product.hasMany(DocumentItem, {
+  foreignKey: 'productId',
+});
+
 // Party → Document
 Party.hasMany(Document, {
   foreignKey: 'partyId',

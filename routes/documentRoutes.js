@@ -3,6 +3,8 @@ const router = express.Router();
 const {
   getDocuments,
   getDocumentById,
+  getDocumentsByProduct,
+  getDocumentsByParty,
   addDocument,
   updateDocument,
   deleteDocument,
@@ -11,6 +13,8 @@ const {
 
 router.get('/get-Documents', getDocuments);
 router.get('/get-Document/:id', getDocumentById);
+router.get('/get-Documents/by-product/:productId', getDocumentsByProduct);
+router.get('/get-Documents/by-party/:partyId', getDocumentsByParty);
 router.post('/add-Document', addDocument);
 router.put('/update-Document/:id', updateDocument);
 router.delete('/delete-Document/:id', deleteDocument);
