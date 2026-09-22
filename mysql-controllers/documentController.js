@@ -21,6 +21,62 @@ const formatFinancialYear = (format, startYear, endYear) => {
   });
 };
 
+// Mirrors calcItemRow() in the frontend's utils/invoice.js exactly. The
+// client can (and does) recompute this too for live editing, but the
+// server never trusts client-sent totals/tax amounts as authoritative —
+// this is recomputed fresh from price/quantity/discount/tax on every
+// create and update, so a client-side bug (or a stale/mismatched field
+// name) can never silently save a wrong or zero total again.
+function calcDocumentItemRow(item) {
+  const price = Number(item.price) || 0;
+  const qty = Number(item.quantity) || 1;
+  const discountPct = Number(item.discountPercentage ?? item.discountPercent ?? 0);
+  // Accept either the correct payload key (taxPercentage) or the older/
+  // mismatched ones (tax, taxRate) so nothing silently defaults to 0.
+  const taxPct = Number(item.taxPercentage ?? item.tax ?? item.taxRate ?? 0);
+
+  const perUnitDiscount = (price * discountPct) / 100;
+  const perUnitAfterDiscount = price - perUnitDiscount;
+  const perUnitTax = (perUnitAfterDiscount * taxPct) / 100;
+
+  const discountAmount = perUnitDiscount * qty;
+  const afterDiscount = perUnitAfterDiscount * qty;
+  const taxAmount = perUnitTax * qty;
+  const total = afterDiscount + taxAmount;
+
+  return { price, qty, discountPct, taxPct, discountAmount, afterDiscount, taxAmount, total };
+}
+
+// Per-type prefix for the document-number preview below. Not a legally
+// enforced sequence like GST invoices — just a sane, non-colliding default.
+const DOCUMENT_NUMBER_PREFIX = {
+  QUOTATION: 'QT',
+  PROFORMA: 'PF',
+  DELIVERY_CHALLAN: 'DC',
+  CREDIT_NOTE: 'CN',
+  DEBIT_NOTE: 'DN',
+};
+
+// @desc Peek at what the next document number would look like for a given
+//       type — read-only, mirrors salesController's previewNextInvoiceNumber.
+//       Quotation/Proforma/Delivery Challan/Credit Note/Debit Note all had
+//       their number generated from a local, often-empty/stale frontend
+//       list (same class of bug the invoice numbering had) — this gives
+//       them a real backend-derived number instead.
+// @route GET /get-Documents/next-number?type=QUOTATION
+const previewNextDocumentNumber = async (req, res) => {
+  try {
+    const normalizedType = (req.query.type || '').toUpperCase();
+    const count = await Document.count({ where: { documentType: normalizedType } });
+    const prefix = DOCUMENT_NUMBER_PREFIX[normalizedType] || 'DOC';
+    const year = new Date().getFullYear();
+    const nextNumber = `${prefix}/${year}/${String(count + 1).padStart(4, '0')}`;
+    return res.status(200).json({ success: true, data: { nextNumber } });
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+};
+
 // @desc Get documents (filterable like Sales/Purchase lists)
 // @route GET /get-Documents?type=credit_note&partyId=12&status=confirmed&fromDate=2026-08-01&toDate=2026-09-07
 const getDocuments = async (req, res) => {
@@ -147,28 +203,55 @@ const addDocument = async (req, res) => {
     const normalizedType = (documentType || '').toUpperCase();
 
     // Frontend's totals payload uses baseRate/tax/global_discount_amount — accept either naming
-    const resolvedSubTotal = subTotal ?? req.body.baseRate ?? 0;
-    const resolvedTaxAmount = taxAmount ?? req.body.tax ?? 0;
     const resolvedDiscount = discount ?? req.body.global_discount_amount ?? 0;
+
+    // Server-side is the source of truth for totals — never trust whatever
+    // the client computed and sent. Recompute every item's breakdown fresh
+    // from price/quantity/discount/tax, then derive the document totals
+    // from that, the same formula the frontend's calcBillTotals() uses
+    // (sum of item totals, minus the flat global discount, rounded).
+    const rows = (items || []).map((item) => ({ item, calc: calcDocumentItemRow(item) }));
+    const sumAfterDiscount = rows.reduce((s, r) => s + r.calc.afterDiscount, 0);
+    const sumTax = rows.reduce((s, r) => s + r.calc.taxAmount, 0);
+    const rawTotal = sumAfterDiscount + sumTax;
+    const globalDiscountAmt = Number(resolvedDiscount) || 0;
+
+    const resolvedSubTotal = rows.length ? sumAfterDiscount : (subTotal ?? req.body.baseRate ?? 0);
+    const resolvedTaxAmount = rows.length ? sumTax : (taxAmount ?? req.body.tax ?? 0);
+    const resolvedTotalAmount = rows.length
+      ? Math.round(rawTotal - globalDiscountAmt)
+      : (totalAmount ?? 0);
 
     const doc = await Document.create(
       {
         documentType, documentNumber, date: date || new Date(),
         validUntil: validUntil || new Date(), partyId,
         subTotal: resolvedSubTotal, taxAmount: resolvedTaxAmount,
-        discount: resolvedDiscount, totalAmount,
+        discount: resolvedDiscount, totalAmount: resolvedTotalAmount,
         status: status || 'draft', notes, terms,
         companyId: companyId || 1,
       },
       { transaction }
     );
 
-    if (items && items.length > 0) {
-      const docItems = items.map((item) => ({
-        documentId: doc.id, productId: item.productId || null,
-        name: item.name || item.productName, quantity: item.quantity || 1,
-        unit: item.unit || 'pcs', price: item.price || 0,
-        tax: item.tax || 0, total: item.total || item.netRate || 0,
+    if (rows.length > 0) {
+      const docItems = rows.map(({ item, calc }) => ({
+        documentId: doc.id,
+        productId: item.productId || null,
+        name: item.name || item.productName,
+        quantity: calc.qty,
+        unit: item.unit || 'pcs',
+        price: calc.price,
+        tax: calc.taxPct,
+        discountPercentage: calc.discountPct,
+        discountAmount: calc.discountAmount,
+        hsnCode: item.hsnCode || item.hsncode || null,
+        sku: item.sku || null,
+        batchNumber: item.batchNumber || item.batchNo || null,
+        serialNumber: item.serialNumber || item.serialNo || null,
+        notes: item.notes || null,
+        expiryDate: item.expiryDate || null,
+        total: calc.total,
       }));
       await DocumentItem.bulkCreate(docItems, { transaction });
 
@@ -221,9 +304,20 @@ const updateDocument = async (req, res) => {
       return res.status(404).json({ message: 'Document not found' });
     }
 
-    const resolvedSubTotal = subTotal ?? req.body.baseRate ?? doc.subTotal;
-    const resolvedTaxAmount = taxAmount ?? req.body.tax ?? doc.taxAmount;
     const resolvedDiscount = discount ?? req.body.global_discount_amount ?? doc.discount;
+
+    // Same server-authoritative recompute as addDocument — see comment there.
+    const rows = items ? items.map((item) => ({ item, calc: calcDocumentItemRow(item) })) : [];
+    const sumAfterDiscount = rows.reduce((s, r) => s + r.calc.afterDiscount, 0);
+    const sumTax = rows.reduce((s, r) => s + r.calc.taxAmount, 0);
+    const rawTotal = sumAfterDiscount + sumTax;
+    const globalDiscountAmt = Number(resolvedDiscount) || 0;
+
+    const resolvedSubTotal = items ? sumAfterDiscount : (subTotal ?? req.body.baseRate ?? doc.subTotal);
+    const resolvedTaxAmount = items ? sumTax : (taxAmount ?? req.body.tax ?? doc.taxAmount);
+    const resolvedTotalAmount = items
+      ? Math.round(rawTotal - globalDiscountAmt)
+      : (totalAmount ?? doc.totalAmount);
 
     // Type at the time the OLD items were applied vs the type they'll be saved as now —
     // these can differ if the document type itself was changed on edit
@@ -259,7 +353,7 @@ const updateDocument = async (req, res) => {
       {
         documentType, documentNumber, date, validUntil: validUntil || new Date(),
         partyId, subTotal: resolvedSubTotal, taxAmount: resolvedTaxAmount,
-        discount: resolvedDiscount, totalAmount, status, notes, terms,
+        discount: resolvedDiscount, totalAmount: resolvedTotalAmount, status, notes, terms,
       },
       { transaction }
     );
@@ -267,11 +361,23 @@ const updateDocument = async (req, res) => {
     if (items) {
       await DocumentItem.destroy({ where: { documentId: id }, transaction });
 
-      const docItems = items.map((item) => ({
-        documentId: id, productId: item.productId || null,
-        name: item.name || item.productName, quantity: item.quantity || 1,
-        unit: item.unit || 'pcs', price: item.price || 0,
-        tax: item.tax || 0, total: item.total || item.netRate || 0,
+      const docItems = rows.map(({ item, calc }) => ({
+        documentId: id,
+        productId: item.productId || null,
+        name: item.name || item.productName,
+        quantity: calc.qty,
+        unit: item.unit || 'pcs',
+        price: calc.price,
+        tax: calc.taxPct,
+        discountPercentage: calc.discountPct,
+        discountAmount: calc.discountAmount,
+        hsnCode: item.hsnCode || item.hsncode || null,
+        sku: item.sku || null,
+        batchNumber: item.batchNumber || item.batchNo || null,
+        serialNumber: item.serialNumber || item.serialNo || null,
+        notes: item.notes || null,
+        expiryDate: item.expiryDate || null,
+        total: calc.total,
       }));
       await DocumentItem.bulkCreate(docItems, { transaction });
 
@@ -432,6 +538,7 @@ module.exports = {
   getDocumentById,
   getDocumentsByProduct,
   getDocumentsByParty,
+  previewNextDocumentNumber,
   addDocument,
   updateDocument,
   deleteDocument,

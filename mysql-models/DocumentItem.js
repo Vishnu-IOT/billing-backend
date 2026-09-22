@@ -41,6 +41,38 @@ const DocumentItem = sequelize.define(
       type: DataTypes.DECIMAL(12, 2),
       defaultValue: 0.00,
     },
+    discountPercentage: {
+      type: DataTypes.DECIMAL(5, 2),
+      defaultValue: 0.00,
+    },
+    discountAmount: {
+      type: DataTypes.DECIMAL(12, 2),
+      defaultValue: 0.00,
+    },
+    hsnCode: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
+    sku: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
+    batchNumber: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
+    serialNumber: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
+    notes: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+    },
+    expiryDate: {
+      type: DataTypes.DATEONLY,
+      allowNull: true,
+    },
   },
   {
     tableName: 'document_items',

@@ -5,6 +5,7 @@ const {
   getDocumentById,
   getDocumentsByProduct,
   getDocumentsByParty,
+  previewNextDocumentNumber,
   addDocument,
   updateDocument,
   deleteDocument,
@@ -12,6 +13,7 @@ const {
 } = require('../mysql-controllers/documentController');
 
 router.get('/get-Documents', getDocuments);
+router.get('/get-Documents/next-number', previewNextDocumentNumber);
 router.get('/get-Document/:id', getDocumentById);
 router.get('/get-Documents/by-product/:productId', getDocumentsByProduct);
 router.get('/get-Documents/by-party/:partyId', getDocumentsByParty);

@@ -515,6 +515,17 @@ const createInvoice = async (req, res) => {
         );
       }
 
+      // Reduce stock for the sale. No floor/guard here on purpose — selling
+      // from a product that's already at (or below) zero stock is allowed
+      // and intentionally goes negative (backorder), matching how editing
+      // an existing invoice already behaves.
+      await product.update(
+        {
+          stockQuantity: product.stockQuantity - Number(item.quantity || 0),
+        },
+        { transaction }
+      );
+
       await SalesItem.create(
         {
           saleId: invoice.id,
@@ -900,6 +911,7 @@ const deleteInvoice = async (req, res) => {
         },
         {
           where: { id: item.productId },
+          transaction,
         }
       );
     }
