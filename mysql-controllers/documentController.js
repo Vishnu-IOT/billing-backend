@@ -4,6 +4,8 @@ const Party = require('../mysql-models/Party');
 const Product = require('../mysql-models/Product');
 const Sale = require('../mysql-models/SalesBill');
 const SalesItem = require('../mysql-models/Sales-Items');
+const Purchase = require('../mysql-models/PurchaseBill');
+const PurchaseItem = require('../mysql-models/Purchase-Items');
 const InvoiceSettings = require('../mysql-models/Invoice_Settings');
 const AppSettings = require('../mysql-models/AppSettings');
 const sequelize = require('../config/sqldb');
@@ -51,10 +53,12 @@ function calcDocumentItemRow(item) {
 // enforced sequence like GST invoices — just a sane, non-colliding default.
 const DOCUMENT_NUMBER_PREFIX = {
   QUOTATION: 'QT',
+  SALES_ORDER: 'SO',
   PROFORMA: 'PF',
   DELIVERY_CHALLAN: 'DC',
   CREDIT_NOTE: 'CN',
   DEBIT_NOTE: 'DN',
+  PURCHASE_ORDER: 'PO',
 };
 
 // @desc Peek at what the next document number would look like for a given
@@ -469,6 +473,68 @@ const convertDocumentToInvoice = async (req, res) => {
       return res.status(404).json({ message: 'Document not found' });
     }
 
+    const normalizedType = (doc.documentType || '').toUpperCase();
+
+    // ── Purchase Order → Purchase Bill (goods received into inventory) ──
+    if (normalizedType === 'PURCHASE_ORDER') {
+      const newPurchase = await Purchase.create(
+        {
+          // Supplier's real invoice number isn't known yet at PO-conversion
+          // time — placeholder derived from the PO's own number, editable
+          // afterward through the normal Purchase edit flow.
+          invoiceNumber: `PO-${doc.documentNumber || doc.id}`,
+          partyId: doc.partyId,
+          baseRate: doc.subTotal,
+          tax: doc.taxAmount,
+          global_discount_amount: doc.discount,
+          totalAmount: doc.totalAmount,
+          paymentStatus: 'Unpaid',
+          purchaseDate: new Date(),
+        },
+        { transaction }
+      );
+
+      if (doc.items && doc.items.length > 0) {
+        for (const item of doc.items) {
+          if (!item.productId) continue;
+
+          const product = await Product.findByPk(item.productId, { transaction });
+          if (!product) continue;
+
+          // Receiving goods increases stock — same effect as a normal
+          // Purchase Bill creation.
+          await Product.update(
+            { stockQuantity: product.stockQuantity + Number(item.quantity) },
+            { where: { id: item.productId }, transaction }
+          );
+
+          await PurchaseItem.create(
+            {
+              purchaseId: newPurchase.id,
+              productId: item.productId,
+              productName: item.name,
+              quantity: item.quantity,
+              price: item.price,
+              discountPercentage: item.discountPercentage || 0,
+              discountAmount: item.discountAmount || 0,
+              baseRate: item.price,
+              taxPercentage: item.tax || 0,
+              taxAmount: (Number(item.price) * Number(item.quantity) * (item.tax || 0)) / 100,
+              netRate: item.total,
+              batchNo: item.batchNumber || null,
+            },
+            { transaction }
+          );
+        }
+      }
+
+      await doc.update({ status: 'converted', convertedInvoiceId: newPurchase.id }, { transaction });
+
+      await transaction.commit();
+      return res.status(200).json({ message: 'Purchase Order converted to Purchase Bill successfully', invoice: newPurchase });
+    }
+
+    // ── Quotation / Proforma / Sales Order → Sale Invoice ──
     const companyId = doc.companyId || 1;
     const appSettings = await AppSettings.findOne({ where: { companyId }, transaction });
 
@@ -514,6 +580,22 @@ const convertDocumentToInvoice = async (req, res) => {
     await invoiceSettings.update({ next_sequence_no: sequenceNumber + 1 }, { transaction });
 
     if (doc.items && doc.items.length > 0) {
+      for (const item of doc.items) {
+        if (item.productId) {
+          const product = await Product.findByPk(item.productId, { transaction });
+          if (product) {
+            // Converting to a Sale means the goods are now being sold —
+            // decrement stock the same way a normal invoice creation does
+            // (no floor — matches the intentional backorder/negative-stock
+            // behavior elsewhere in this app).
+            await product.update(
+              { stockQuantity: product.stockQuantity - Number(item.quantity) },
+              { transaction }
+            );
+          }
+        }
+      }
+
       const saleItems = doc.items.map((item) => ({
         saleId: newSale.id, productId: item.productId, productName: item.name,
         quantity: item.quantity, price: item.price,

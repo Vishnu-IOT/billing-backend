@@ -56,6 +56,7 @@ const getInvoices = async (req, res) => {
           ],
         },
       ],
+      order: [["saleDate", "DESC"], ["id", "DESC"]],
     });
 
     return res.status(200).json(invoices);
@@ -152,6 +153,7 @@ const getInvoicesByDate = async (req, res) => {
           ],
         },
       ],
+      order: [["saleDate", "DESC"], ["id", "DESC"]],
     });
 
     return res.status(200).json(invoices);

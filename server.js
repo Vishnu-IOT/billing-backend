@@ -43,6 +43,7 @@ app.use('/api/brands', require('./routes/brandRoutes'));
 app.use('/api/variants', require('./routes/variantRoutes'));
 app.use('/api/audit-logs', require('./routes/auditRoutes'));
 app.use('/api/app-settings', require('./routes/appSettingsRoutes'));
+app.use('/api/reports', require('./routes/reportsRoutes'));
 
 
 app.get('/', (req, res) => {

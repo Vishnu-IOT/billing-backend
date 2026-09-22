@@ -27,6 +27,7 @@ const getPurchase = async (req, res) => {
           ],
         },
       ],
+      order: [["purchaseDate", "DESC"], ["id", "DESC"]],
     });
 
     return res.status(200).json(invoices);
@@ -110,6 +111,7 @@ const getPurchaseInvoicesByDate = async (req, res) => {
           ],
         },
       ],
+      order: [["purchaseDate", "DESC"], ["id", "DESC"]],
     });
 
     return res.status(200).json(invoices);
