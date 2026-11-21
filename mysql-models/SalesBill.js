@@ -35,6 +35,46 @@ const Sale = sequelize.define(
       },
     },
 
+    companyId: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+    },
+
+    partyNameSnapshot: {
+      type: DataTypes.STRING(255),
+      allowNull: true,
+    },
+
+    partyGstinSnapshot: {
+      type: DataTypes.STRING(15),
+      allowNull: true,
+    },
+
+    partyRegistrationTypeSnapshot: {
+      type: DataTypes.ENUM('REGISTERED', 'UNREGISTERED'),
+      allowNull: true,
+    },
+
+    taxTypeSnapshot: {
+      type: DataTypes.ENUM('CGST_SGST', 'IGST'),
+      allowNull: true,
+    },
+
+    placeOfSupplyStateCodeSnapshot: {
+      type: DataTypes.STRING(2),
+      allowNull: true,
+    },
+
+    placeOfSupplyNameSnapshot: {
+      type: DataTypes.STRING(80),
+      allowNull: true,
+    },
+
+    reverseCharge: {
+      type: DataTypes.BOOLEAN,
+      allowNull: true,
+    },
+
     customerId: {
       type: DataTypes.INTEGER,
       allowNull: true,
@@ -82,6 +122,18 @@ const Sale = sequelize.define(
       defaultValue: 0.0,
     },
 
+    roundOff: {
+      type: DataTypes.DECIMAL(10, 2),
+      allowNull: false,
+      defaultValue: 0.0,
+    },
+
+    returnCreditAmount: {
+      type: DataTypes.DECIMAL(12, 2),
+      allowNull: false,
+      defaultValue: 0.0,
+    },
+
     paymentStatus: {
       type: DataTypes.ENUM('Paid', 'Unpaid', 'Partial', 'Overdue', 'Cancelled'),
       defaultValue: 'Unpaid',
@@ -99,6 +151,16 @@ const Sale = sequelize.define(
       defaultValue: 'B2C',
     },
 
+    taxDocumentType: {
+      type: DataTypes.ENUM(
+        'RETAIL_INVOICE',
+        'SALES_RECEIPT_GST_PENDING',
+        'GST_TAX_INVOICE',
+      ),
+      allowNull: false,
+      defaultValue: 'RETAIL_INVOICE',
+    },
+
     shiftId: {
       type: DataTypes.INTEGER,
       allowNull: true,
@@ -114,7 +176,7 @@ const Sale = sequelize.define(
     },
 
     saleDate: {
-      type: DataTypes.DATE,
+      type: DataTypes.DATEONLY,
       defaultValue: DataTypes.NOW,
     },
 
@@ -122,6 +184,7 @@ const Sale = sequelize.define(
       type: DataTypes.INTEGER,
       defaultValue: 1,
     },
+
   },
   {
     tableName: 'sales',

@@ -1,12 +1,16 @@
 const Party = require('../mysql-models/Party');
 const Purchase = require('../mysql-models/PurchaseBill');
 const Sale = require('../mysql-models/SalesBill');
+const { validatePartyRegistration } = require('../utils/gstInvoiceTax');
+const { getPartyInvoiceVisibility } = require('../utils/partyInvoiceVisibility');
 
 // @desc    Get all party
 // @route   GET /api/party
 const getParty = async (req, res) => {
   try {
-    const customers = await Party.findAll();
+    const customers = await Party.findAll({
+      where: { companyId: req.user.companyId },
+    });
 
     return res.status(200).json(customers);
   } catch (error) {
@@ -18,7 +22,9 @@ const getParty = async (req, res) => {
 // @route   GET /api/Partys/:id
 const getPartyById = async (req, res) => {
   try {
-    const customer = await Party.findByPk(req.params.id);
+    const customer = await Party.findOne({
+      where: { id: req.params.id, companyId: req.user.companyId },
+    });
 
     if (!customer) {
       return res.status(404).json({ message: 'Party not found' });
@@ -35,10 +41,25 @@ const getPartyById = async (req, res) => {
 const getPartyInvoiceById = async (req, res) => {
   try {
     const partyId = req.params.id;
+    const party = await Party.findOne({
+      where: { id: partyId, companyId: req.user.companyId },
+    });
+    if (!party) {
+      return res.status(404).json({ message: 'Party not found' });
+    }
 
+    const invoiceVisibility = getPartyInvoiceVisibility(req);
     const [sales, purchases] = await Promise.all([
-      Sale.findAll({ where: { partyId } }),
-      Purchase.findAll({ where: { partyId } }),
+      invoiceVisibility.sales
+        ? Sale.findAll({
+            where: { partyId, companyId: req.user.companyId },
+          })
+        : [],
+      invoiceVisibility.purchases
+        ? Purchase.findAll({
+            where: { partyId, companyId: req.user.companyId },
+          })
+        : [],
     ]);
 
     // Add type field
@@ -66,10 +87,15 @@ const getPartyInvoiceById = async (req, res) => {
 const createParty = async (req, res) => {
   try {
     const { name, GST, email, phone, address } = req.body;
-
-    const customerExists = await Party.findOne({
-      where: { email },
+    const registration = validatePartyRegistration({
+      gstRegistrationType: req.body.gstRegistrationType,
+      GST,
     });
+    const normalizedEmail = email && String(email).trim() ? String(email).trim() : null;
+
+    const customerExists = normalizedEmail
+      ? await Party.findOne({ where: { email: normalizedEmail } })
+      : null;
 
     if (customerExists) {
       return res.status(400).json({ message: 'Party already exists' });
@@ -77,10 +103,11 @@ const createParty = async (req, res) => {
 
     const customer = await Party.create({
       name,
-      GST,
-      email,
+      ...registration,
+      email: normalizedEmail,
       phone,
       address,
+      companyId: req.user.companyId,
     });
 
     return res.status(201).json(customer);
@@ -93,13 +120,30 @@ const createParty = async (req, res) => {
 // @route   PUT /api/Partys/:id
 const updateParty = async (req, res) => {
   try {
-    const customer = await Party.findByPk(req.params.id);
+    const customer = await Party.findOne({
+      where: { id: req.params.id, companyId: req.user.companyId },
+    });
 
     if (!customer) {
       return res.status(404).json({ message: 'Party not found' });
     }
 
-    await customer.update(req.body);
+    const payload = { ...req.body };
+    const registration = validatePartyRegistration({
+      gstRegistrationType:
+        payload.gstRegistrationType || customer.gstRegistrationType,
+      GST: Object.prototype.hasOwnProperty.call(payload, 'GST')
+        ? payload.GST
+        : customer.GST,
+    });
+    Object.assign(payload, registration);
+    if (payload.email !== undefined && (!String(payload.email).trim())) {
+      payload.email = null;
+    } else if (payload.email !== undefined && String(payload.email).trim()) {
+      payload.email = String(payload.email).trim();
+    }
+
+    await customer.update(payload);
 
     return res.status(200).json(customer);
   } catch (error) {
@@ -111,7 +155,9 @@ const updateParty = async (req, res) => {
 // @route   DELETE /api/Partys/:id
 const deleteParty = async (req, res) => {
   try {
-    const customer = await Party.findByPk(req.params.id);
+    const customer = await Party.findOne({
+      where: { id: req.params.id, companyId: req.user.companyId },
+    });
 
     if (!customer) {
       return res.status(404).json({ message: 'Party not found' });
@@ -131,7 +177,9 @@ const deleteParty = async (req, res) => {
 const getPartyAgeing = async (req, res) => {
   try {
     const partyId = req.params.id;
-    const party = await Party.findByPk(partyId);
+    const party = await Party.findOne({
+      where: { id: partyId, companyId: req.user.companyId },
+    });
 
     if (!party) {
       return res.status(404).json({ message: 'Party not found' });
@@ -140,6 +188,7 @@ const getPartyAgeing = async (req, res) => {
     const unpaidSales = await Sale.findAll({
       where: {
         partyId,
+        companyId: req.user.companyId,
         paymentStatus: ['Unpaid', 'Overdue'],
       },
     });
@@ -191,4 +240,3 @@ module.exports = {
   deleteParty,
   getPartyAgeing,
 };
-

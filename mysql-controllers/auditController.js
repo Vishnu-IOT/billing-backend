@@ -21,12 +21,21 @@ const getAuditLogs = async (req, res) => {
     const { module, limit = 100 } = req.query;
     const where = {};
     if (module) where.module = module;
+    const parsedLimit = Number.parseInt(limit, 10);
+    if (!Number.isInteger(parsedLimit) || parsedLimit < 1 || parsedLimit > 500) {
+      return res.status(400).json({ success: false, message: 'limit must be between 1 and 500' });
+    }
 
     const logs = await AuditLog.findAll({
       where,
-      include: [{ model: User, attributes: ['id', 'name', 'email'] }],
+      include: [{
+        model: User,
+        attributes: ['id', 'name', 'email'],
+        where: { companyId: req.user.companyId },
+        required: true,
+      }],
       order: [['createdAt', 'DESC']],
-      limit: parseInt(limit, 10),
+      limit: parsedLimit,
     });
 
     return res.status(200).json({ success: true, data: logs });

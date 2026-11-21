@@ -10,11 +10,31 @@ const {
   cancelHoldCart,
   getShiftDetails,
 } = require('../mysql-controllers/posController');
+const {
+  authenticateLoyaltyUser,
+  requireLoyaltyAdmin,
+} = require('../middleware/loyaltyAuth');
+const { requirePermission } = require('../middleware/rbacAuth');
+const {
+  listCounters,
+  getAssignedCounters,
+  createCounter,
+  updateCounter,
+} = require('../mysql-controllers/posCounterController');
 
-router.get('/shifts/current', getCurrentShift);
-router.post('/shifts/start', startShift);
-router.post('/shifts/end', endShift);
-router.get('/shifts/all-shifts', getShiftDetails);
+router.get('/counters/assigned', authenticateLoyaltyUser, getAssignedCounters);
+router.get('/counters', authenticateLoyaltyUser, requireLoyaltyAdmin, listCounters);
+router.post('/counters', authenticateLoyaltyUser, requireLoyaltyAdmin, createCounter);
+router.put('/counters/:id', authenticateLoyaltyUser, requireLoyaltyAdmin, updateCounter);
+router.get('/shifts/current', authenticateLoyaltyUser, getCurrentShift);
+router.post('/shifts/start', authenticateLoyaltyUser, startShift);
+router.post('/shifts/end', authenticateLoyaltyUser, endShift);
+router.get(
+  '/shifts/all-shifts',
+  authenticateLoyaltyUser,
+  requirePermission('shifts.management.view'),
+  getShiftDetails
+);
 
 router.post('/hold', holdCart);
 router.get('/hold', getHoldCarts);

@@ -35,13 +35,112 @@ const SalesItem = sequelize.define(
     },
 
     quantity: {
-      type: DataTypes.INTEGER,
+      type: DataTypes.DECIMAL(15, 3),
       allowNull: false,
+      get() {
+        const value = this.getDataValue('quantity');
+        return value === null || value === undefined ? value : Number(value);
+      },
+    },
+
+    paidQuantity: {
+      type: DataTypes.DECIMAL(15, 3),
+      allowNull: true,
+      defaultValue: null,
+      get() {
+        const value = this.getDataValue('paidQuantity');
+        return value === null || value === undefined ? this.quantity : Number(value);
+      },
+    },
+
+    freeQuantity: {
+      type: DataTypes.DECIMAL(15, 3),
+      allowNull: false,
+      defaultValue: 0,
+      get() {
+        const value = this.getDataValue('freeQuantity');
+        return value === null || value === undefined ? 0 : Number(value);
+      },
+    },
+
+    totalQuantity: {
+      type: DataTypes.DECIMAL(15, 3),
+      allowNull: false,
+      defaultValue: 0,
+      get() {
+        const value = this.getDataValue('totalQuantity');
+        return value === null || value === undefined ? (Number(this.quantity || 0) + Number(this.freeQuantity || 0)) : Number(value);
+      },
+    },
+
+    offerId: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      references: {
+        model: 'promotional_offers',
+        key: 'id',
+      },
+    },
+
+    offerName: {
+      type: DataTypes.STRING(255),
+      allowNull: true,
+    },
+
+    productBatchId: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      references: {
+        model: 'product_batches',
+        key: 'id',
+      },
+    },
+
+    purchaseCost: {
+      type: DataTypes.DECIMAL(12, 4),
+      allowNull: true,
+    },
+
+    promotionSource: {
+      type: DataTypes.ENUM('REGULAR', 'CAMPAIGN'),
+      allowNull: true,
+    },
+
+    promotionId: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+    },
+
+    promoApplicationId: {
+      type: DataTypes.STRING(36),
+      allowNull: true,
+    },
+
+    itemRole: {
+      type: DataTypes.ENUM('QUALIFYING', 'GIFT'),
+      allowNull: false,
+      defaultValue: 'QUALIFYING',
+    },
+
+    quantityUnit: {
+      type: DataTypes.ENUM('PCS', 'KG'),
+      allowNull: false,
+      defaultValue: 'PCS',
     },
 
     price: {
       type: DataTypes.DECIMAL(10, 2),
       allowNull: false,
+    },
+
+    mrp: {
+      type: DataTypes.DECIMAL(12, 2),
+      allowNull: true,
+    },
+
+    priceType: {
+      type: DataTypes.ENUM('WITH_GST', 'WITHOUT_GST'),
+      allowNull: true,
     },
 
     discountPercentage: {
@@ -71,6 +170,26 @@ const SalesItem = sequelize.define(
       type: DataTypes.DECIMAL(10, 2),
       allowNull: false,
       defaultValue: 0,
+    },
+
+    cgstAmount: {
+      type: DataTypes.DECIMAL(10, 2),
+      allowNull: true,
+    },
+
+    sgstAmount: {
+      type: DataTypes.DECIMAL(10, 2),
+      allowNull: true,
+    },
+
+    igstAmount: {
+      type: DataTypes.DECIMAL(10, 2),
+      allowNull: true,
+    },
+
+    cessAmount: {
+      type: DataTypes.DECIMAL(10, 2),
+      allowNull: true,
     },
 
     netRate: {

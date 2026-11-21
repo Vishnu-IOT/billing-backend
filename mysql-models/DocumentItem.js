@@ -22,7 +22,7 @@ const DocumentItem = sequelize.define(
       allowNull: false,
     },
     quantity: {
-      type: DataTypes.DECIMAL(10, 2),
+      type: DataTypes.DECIMAL(15, 3),
       defaultValue: 1,
     },
     unit: {

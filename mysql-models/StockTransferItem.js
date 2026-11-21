@@ -18,12 +18,17 @@ const StockTransferItem = sequelize.define(
       allowNull: false,
     },
     quantitySent: {
-      type: DataTypes.DECIMAL(10, 2),
+      type: DataTypes.DECIMAL(15, 3),
       allowNull: false,
     },
     quantityReceived: {
-      type: DataTypes.DECIMAL(10, 2),
+      type: DataTypes.DECIMAL(15, 3),
       defaultValue: 0,
+    },
+    quantityUnit: {
+      type: DataTypes.ENUM('PCS', 'KG'),
+      allowNull: false,
+      defaultValue: 'PCS',
     },
   },
   {

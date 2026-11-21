@@ -9,6 +9,12 @@ const Customer = sequelize.define(
       primaryKey: true,
       autoIncrement: true,
     },
+    companyId: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      references: { model: 'companies', key: 'id' },
+      onDelete: 'CASCADE',
+    },
 
     name: {
       type: DataTypes.STRING,

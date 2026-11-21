@@ -31,7 +31,7 @@ const StockTransfer = sequelize.define(
       defaultValue: 'DRAFT',
     },
     totalQuantity: {
-      type: DataTypes.DECIMAL(10, 2),
+      type: DataTypes.DECIMAL(15, 3),
       defaultValue: 0,
     },
     notes: {

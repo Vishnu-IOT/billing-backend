@@ -5,6 +5,7 @@ const Customer = require('../mysql-models/Customer');
 const getCustomers = async (req, res) => {
   try {
     const customers = await Customer.findAll({
+      where: { companyId: req.user.companyId },
       attributes: ['id', 'name', 'phone', 'loyalty_points'],
     });
 
@@ -22,7 +23,9 @@ const getCustomers = async (req, res) => {
 // @route   GET /api/customers/:id
 const getCustomerById = async (req, res) => {
   try {
-    const customer = await Customer.findByPk(req.params.id);
+    const customer = await Customer.findOne({
+      where: { id: req.params.id, companyId: req.user.companyId },
+    });
 
     if (!customer) {
       return res.status(404).json({ message: 'Customer not found' });
@@ -41,7 +44,7 @@ const createCustomer = async (req, res) => {
     const { name, phone, loyalty_points } = req.body;
 
     const customerExists = await Customer.findOne({
-      where: { phone },
+      where: { phone, companyId: req.user.companyId },
     });
 
     if (customerExists) {
@@ -52,6 +55,7 @@ const createCustomer = async (req, res) => {
       name,
       phone,
       loyalty_points,
+      companyId: req.user.companyId,
     });
 
     return res.status(201).json(customer);
@@ -64,13 +68,22 @@ const createCustomer = async (req, res) => {
 // @route   PUT /api/customers/:id
 const updateCustomer = async (req, res) => {
   try {
-    const customer = await Customer.findByPk(req.params.id);
+    const customer = await Customer.findOne({
+      where: { id: req.params.id, companyId: req.user.companyId },
+    });
 
     if (!customer) {
       return res.status(404).json({ message: 'Customer not found' });
     }
 
-    await customer.update(req.body);
+    const updates = {
+      ...(req.body.name !== undefined && { name: req.body.name }),
+      ...(req.body.phone !== undefined && { phone: req.body.phone }),
+      ...(req.body.loyalty_points !== undefined && {
+        loyalty_points: req.body.loyalty_points,
+      }),
+    };
+    await customer.update(updates);
 
     return res.status(200).json(customer);
   } catch (error) {
@@ -82,7 +95,9 @@ const updateCustomer = async (req, res) => {
 // @route   DELETE /api/customers/:id
 const deleteCustomer = async (req, res) => {
   try {
-    const customer = await Customer.findByPk(req.params.id);
+    const customer = await Customer.findOne({
+      where: { id: req.params.id, companyId: req.user.companyId },
+    });
 
     if (!customer) {
       return res.status(404).json({ message: 'Customer not found' });

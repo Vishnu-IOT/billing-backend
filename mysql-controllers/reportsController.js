@@ -159,20 +159,23 @@ const salesReport = H.handler(async (req, res) => {
     LEFT JOIN customers c ON c.id = s.customerId
     LEFT JOIN users u ON u.id = s.userId
     LEFT JOIN (SELECT saleId, SUM(quantity) AS qty, COUNT(*) AS lineCount FROM sales_items GROUP BY saleId) iq ON iq.saleId = s.id
+    LEFT JOIN (SELECT saleId, SUM(quantity) AS qty, COUNT(*) AS lineCount FROM quick_sale_sale_items GROUP BY saleId) qiq ON qiq.saleId = s.id
     ${where(conds)}`;
 
   const baseSql = `SELECT s.id, s.invoiceNumber, s.saleDate, s.partyId, pt.name AS partyName, pt.GST AS partyGST,
       c.name AS customerName, s.userId, u.name AS userName, s.bill_type AS billType, s.paymentStatus,
       s.baseRate, s.tax, s.global_discount_amount AS globalDiscount, s.totalAmount,
       ${H.effPaid('s')} AS amountPaid, ${H.balanceDue('s')} AS balanceDue,
-      COALESCE(iq.qty, 0) AS totalQuantity, COALESCE(iq.lineCount, 0) AS itemCount,
+      COALESCE(iq.qty, 0) + COALESCE(qiq.qty, 0) AS totalQuantity,
+      COALESCE(iq.lineCount, 0) + COALESCE(qiq.lineCount, 0) AS itemCount,
       (SELECT GROUP_CONCAT(DISTINCT _pi.paymentMode ORDER BY _pi.paymentMode SEPARATOR ', ')
          FROM payments_in _pi WHERE _pi.saleId = s.id) AS paymentModes
     ${from}`;
 
   const summarySql = `SELECT COUNT(*) AS invoiceCount, SUM(s.totalAmount) AS totalAmount, SUM(s.tax) AS totalTax,
       SUM(s.global_discount_amount) AS totalGlobalDiscount, SUM(${H.effPaid('s')}) AS totalPaid,
-      SUM(${H.balanceDue('s')}) AS totalBalanceDue, SUM(COALESCE(iq.qty, 0)) AS totalQuantity ${from}`;
+      SUM(${H.balanceDue('s')}) AS totalBalanceDue,
+      SUM(COALESCE(iq.qty, 0) + COALESCE(qiq.qty, 0)) AS totalQuantity ${from}`;
 
   const out = await H.runPaged({
     baseSql, params: p, orderBy: sort.orderBy, pg,
@@ -198,13 +201,14 @@ const userReport = H.handler(async (req, res) => {
   const from = `FROM sales s
     LEFT JOIN users u ON u.id = s.userId
     LEFT JOIN (SELECT saleId, SUM(quantity) AS qty FROM sales_items GROUP BY saleId) iq ON iq.saleId = s.id
+    LEFT JOIN (SELECT saleId, SUM(quantity) AS qty FROM quick_sale_sale_items GROUP BY saleId) qiq ON qiq.saleId = s.id
     ${where(conds)}`;
 
   const baseSql = `SELECT s.userId, COALESCE(u.name, 'Unassigned') AS userName, u.email, u.role,
       COUNT(*) AS invoiceCount, SUM(s.totalAmount) AS totalSales, SUM(s.tax) AS totalTax,
       SUM(s.global_discount_amount) AS totalDiscount, AVG(s.totalAmount) AS avgInvoiceValue,
       SUM(${H.effPaid('s')}) AS totalPaid, SUM(${H.balanceDue('s')}) AS outstanding,
-      SUM(COALESCE(iq.qty, 0)) AS itemsSold,
+      SUM(COALESCE(iq.qty, 0) + COALESCE(qiq.qty, 0)) AS itemsSold,
       SUM(s.bill_type = 'B2B') AS b2bInvoiceCount, SUM(s.bill_type = 'B2C') AS b2cInvoiceCount,
       COUNT(DISTINCT s.partyId) AS partyCount, MIN(s.saleDate) AS firstSaleDate, MAX(s.saleDate) AS lastSaleDate
     ${from}
@@ -212,7 +216,8 @@ const userReport = H.handler(async (req, res) => {
 
   const summarySql = `SELECT COUNT(DISTINCT s.userId) AS repCount, COUNT(*) AS invoiceCount, SUM(s.totalAmount) AS totalSales,
       SUM(s.tax) AS totalTax, SUM(s.global_discount_amount) AS totalDiscount, SUM(${H.effPaid('s')}) AS totalPaid,
-      SUM(${H.balanceDue('s')}) AS outstanding, SUM(COALESCE(iq.qty, 0)) AS itemsSold ${from}`;
+      SUM(${H.balanceDue('s')}) AS outstanding,
+      SUM(COALESCE(iq.qty, 0) + COALESCE(qiq.qty, 0)) AS itemsSold ${from}`;
 
   const out = await H.runPaged({
     baseSql, params: p, orderBy: sort.orderBy, pg,
@@ -368,7 +373,7 @@ const purchaseReport = H.handler(async (req, res) => {
 
   const baseSql = `SELECT pu.id, pu.invoiceNumber, pu.purchaseDate, pu.po_number AS poNumber, pu.partyId, pt.name AS partyName, pt.GST AS partyGST,
       pu.paymentStatus, pu.baseRate, pu.tax, pu.global_discount_amount AS globalDiscount, pu.totalAmount,
-      ${H.effPaid('pu')} AS amountPaid, ${H.balanceDue('pu')} AS balanceDue,
+      ${H.effPaid('pu')} AS amountPaid, ${H.purchaseBalanceDue('pu')} AS balanceDue,
       COALESCE(iq.qty, 0) AS totalQuantity, COALESCE(iq.lineCount, 0) AS itemCount,
       (SELECT GROUP_CONCAT(DISTINCT _po.paymentMode ORDER BY _po.paymentMode SEPARATOR ', ')
          FROM payments_out _po WHERE _po.purchaseId = pu.id) AS paymentModes
@@ -398,10 +403,10 @@ const purchaseByParty = H.handler(async (req, res) => {
 
   const baseSql = `SELECT pt.id AS partyId, pt.name AS partyName, pt.GST AS partyGST,
       COUNT(DISTINCT pu.id) AS billCount, SUM(pu.totalAmount) AS totalPurchases,
-      SUM(${H.effPaid('pu')}) AS totalPaid, SUM(${H.balanceDue('pu')}) AS outstanding
+      SUM(${H.effPaid('pu')}) AS totalPaid, SUM(${H.purchaseBalanceDue('pu')}) AS outstanding
     ${from} GROUP BY pt.id, pt.name, pt.GST`;
   const summarySql = `SELECT COUNT(DISTINCT pt.id) AS partyCount, COUNT(*) AS billCount, SUM(pu.totalAmount) AS totalPurchases,
-      SUM(${H.effPaid('pu')}) AS totalPaid, SUM(${H.balanceDue('pu')}) AS outstanding ${from}`;
+      SUM(${H.effPaid('pu')}) AS totalPaid, SUM(${H.purchaseBalanceDue('pu')}) AS outstanding ${from}`;
 
   const out = await H.runPaged({
     baseSql, params: p, orderBy: sort.orderBy, pg, numeric: ['billCount', 'totalPurchases', 'totalPaid', 'outstanding'], summarySql,
@@ -453,7 +458,7 @@ function parseStockFilters(q) {
 //   current stock + sold after that day − purchased after that day.
 // (Only sales and purchases are rewound — stock adjustments/transfers carry no
 //  reliable signed quantity, so they are not reversed.)
-function stockBase(f, p, { detailed = false } = {}) {
+function stockBase(f, p, { detailed = false, companyId } = {}) {
   const conds = [];
   if (f.categoryId) conds.push(`pr.categoryId = ${p.add(f.categoryId)}`);
   if (f.brandId) conds.push(`pr.brandId = ${p.add(f.brandId)}`);
@@ -475,6 +480,23 @@ function stockBase(f, p, { detailed = false } = {}) {
     boughtFilter = `AND _p.purchaseDate < ${ph}`;
   }
 
+  const returnCompany = p.add(companyId || null);
+  const returnDateFilter = f.asOfExclusive
+    ? `AND _sr.createdAt < ${p.add(f.asOfExclusive)}`
+    : '';
+  const returnedQuantity = (condition) => `COALESCE((
+    SELECT SUM(_sr.quantity)
+    FROM sales_returns _sr
+    INNER JOIN sales _s ON _s.id = _sr.saleId
+      AND _s.companyId = ${returnCompany}
+      AND _s.paymentStatus <> 'Cancelled'
+    WHERE _sr.productId = pr.id
+      AND _sr.returnCondition = '${condition}'
+      ${returnDateFilter}
+  ), 0)`;
+  const returnQuantities = `, ${returnedQuantity('GOOD')} AS reportedResalableReturnQty
+    , ${returnedQuantity('DAMAGED')} AS reportedDamagedReturnQty
+    , ${returnedQuantity('EXPIRED')} AS reportedExpiredReturnQty`;
   const extra = detailed
     ? `, pr.MRP, pr.barcode, pr.HSNCode AS hsnCode, pr.reorderLevel, pr.expiryDate,
       COALESCE((SELECT SUM(_si.quantity) FROM sales_items _si JOIN sales _s ON _s.id = _si.saleId WHERE _si.productId = pr.id ${soldFilter}), 0) AS totalSoldQty,
@@ -485,7 +507,7 @@ function stockBase(f, p, { detailed = false } = {}) {
 
   const core = `SELECT pr.id, pr.name, pr.sku, pr.unit, pr.categoryId, cat.category AS categoryName,
       pr.brandId, br.name AS brandName, ${qty} AS stockQuantity, pr.purchasePrice, pr.salesPrice,
-      pr.minStockLevel ${extra}
+      pr.minStockLevel ${returnQuantities} ${extra}
     FROM products pr
     LEFT JOIN categories cat ON cat.id = pr.categoryId
     LEFT JOIN brands br ON br.id = pr.brandId
@@ -504,15 +526,20 @@ function stockBase(f, p, { detailed = false } = {}) {
     : withStatus;
 }
 
-const STOCK_NUMERIC = ['stockQuantity', 'purchasePrice', 'salesPrice', 'minStockLevel', 'stockValueAtCost', 'stockValueAtSale',
+const RETURN_QUANTITY_FIELDS = ['reportedResalableReturnQty', 'reportedDamagedReturnQty', 'reportedExpiredReturnQty'];
+const RETURN_QUANTITY_PRECISION = Object.fromEntries(RETURN_QUANTITY_FIELDS.map((field) => [field, 3]));
+const STOCK_NUMERIC = ['stockQuantity', ...RETURN_QUANTITY_FIELDS, 'purchasePrice', 'salesPrice', 'minStockLevel', 'stockValueAtCost', 'stockValueAtSale',
   'MRP', 'reorderLevel', 'totalSoldQty', 'totalPurchasedQty'];
 const STOCK_SUMMARY_SQL = (base) => `SELECT COUNT(*) AS totalProducts, SUM(stockQuantity) AS totalQuantity,
+    SUM(reportedResalableReturnQty) AS reportedResalableReturnQty,
+    SUM(reportedDamagedReturnQty) AS reportedDamagedReturnQty,
+    SUM(reportedExpiredReturnQty) AS reportedExpiredReturnQty,
     SUM(stockValueAtCost) AS totalStockValueAtCost, SUM(stockValueAtSale) AS totalStockValueAtSale,
     SUM(stockStatus = 'In Stock') AS inStockCount, SUM(stockStatus = 'Low Stock') AS lowStockCount,
     SUM(stockStatus = 'Out of Stock') AS outOfStockCount, SUM(stockStatus = 'Negative Stock') AS negativeStockCount
   FROM (${base}) t`;
 const STOCK_SUMMARY_NUMERIC = ['totalProducts', 'totalQuantity', 'totalStockValueAtCost', 'totalStockValueAtSale',
-  'inStockCount', 'lowStockCount', 'outOfStockCount', 'negativeStockCount'];
+  ...RETURN_QUANTITY_FIELDS, 'inStockCount', 'lowStockCount', 'outOfStockCount', 'negativeStockCount'];
 
 // 11. @route GET /api/reports/stock-report   (detailed per-product stock position)
 const stockReport = H.handler(async (req, res) => {
@@ -524,10 +551,12 @@ const stockReport = H.handler(async (req, res) => {
     totalSoldQty: 'totalSoldQty', totalPurchasedQty: 'totalPurchasedQty', lastSaleDate: 'lastSaleDate',
   }, 'name', 'ASC');
   const p = new Params();
-  const baseSql = stockBase(f, p, { detailed: true });
+  const baseSql = stockBase(f, p, { detailed: true, companyId: req.user?.companyId });
   const out = await H.runPaged({
     baseSql, params: p, orderBy: sort.orderBy, pg, numeric: STOCK_NUMERIC,
+    numericPrecision: RETURN_QUANTITY_PRECISION,
     summarySql: STOCK_SUMMARY_SQL(baseSql), summaryNumeric: STOCK_SUMMARY_NUMERIC,
+    summaryNumericPrecision: RETURN_QUANTITY_PRECISION,
   });
   return H.send(res, { ...out, filters: appliedFilters(f), sort: { sortBy: sort.sortKey, sortOrder: sort.order } });
 });
@@ -538,7 +567,7 @@ const stockSummary = H.handler(async (req, res) => {
   const groupBy = H.parseEnum('groupBy', req.query.groupBy, ['product', 'category', 'brand']) || 'product';
   const pg = H.parsePagination(req.query, { legacy: true });
   const p = new Params();
-  const productBase = stockBase(f, p);
+  const productBase = stockBase(f, p, { companyId: req.user?.companyId });
 
   let baseSql = productBase;
   let sortMap = {
@@ -554,23 +583,32 @@ const stockSummary = H.handler(async (req, res) => {
     const nameCol = groupBy === 'category' ? 'categoryName' : 'brandName';
     baseSql = `SELECT t.${idCol} AS ${idCol}, COALESCE(t.${nameCol}, 'Unbranded') AS ${nameCol}, COUNT(*) AS productCount,
         SUM(t.stockQuantity) AS stockQuantity, SUM(t.stockValueAtCost) AS stockValueAtCost, SUM(t.stockValueAtSale) AS stockValueAtSale,
+        SUM(t.reportedResalableReturnQty) AS reportedResalableReturnQty,
+        SUM(t.reportedDamagedReturnQty) AS reportedDamagedReturnQty,
+        SUM(t.reportedExpiredReturnQty) AS reportedExpiredReturnQty,
         SUM(t.stockStatus = 'In Stock') AS inStockCount, SUM(t.stockStatus = 'Low Stock') AS lowStockCount,
         SUM(t.stockStatus = 'Out of Stock') AS outOfStockCount, SUM(t.stockStatus = 'Negative Stock') AS negativeStockCount
       FROM (${productBase}) t GROUP BY t.${idCol}, t.${nameCol}`;
     sortMap = {
       [nameCol]: nameCol, productCount: 'productCount', stockQuantity: 'stockQuantity',
+      reportedResalableReturnQty: 'reportedResalableReturnQty',
+      reportedDamagedReturnQty: 'reportedDamagedReturnQty',
+      reportedExpiredReturnQty: 'reportedExpiredReturnQty',
       stockValueAtCost: 'stockValueAtCost', stockValueAtSale: 'stockValueAtSale',
     };
     defaultSort = nameCol;
-    numeric = ['productCount', 'stockQuantity', 'stockValueAtCost', 'stockValueAtSale', 'inStockCount', 'lowStockCount', 'outOfStockCount', 'negativeStockCount'];
+    numeric = ['productCount', 'stockQuantity', ...RETURN_QUANTITY_FIELDS, 'stockValueAtCost', 'stockValueAtSale', 'inStockCount', 'lowStockCount', 'outOfStockCount', 'negativeStockCount'];
   }
   const sort = H.parseSort(req.query, sortMap, defaultSort, defaultOrder);
 
   // summary always over the product-level set so group view and product view agree
   const summaryRow = (await H.run(STOCK_SUMMARY_SQL(productBase), p.values))[0];
-  const summary = H.normalizeObject(summaryRow, STOCK_SUMMARY_NUMERIC);
+  const summary = H.normalizeObject(summaryRow, STOCK_SUMMARY_NUMERIC, RETURN_QUANTITY_PRECISION);
 
-  const out = await H.runPaged({ baseSql, params: p, orderBy: sort.orderBy, pg, numeric });
+  const out = await H.runPaged({
+    baseSql, params: p, orderBy: sort.orderBy, pg, numeric,
+    numericPrecision: RETURN_QUANTITY_PRECISION,
+  });
   return H.send(res, {
     ...out,
     summary,
@@ -639,22 +677,43 @@ const gstr1Report = H.handler(async (req, res) => {
     conds.push(`(s.invoiceNumber LIKE ${ph} OR pt.name LIKE ${ph} OR pt.GST LIKE ${ph})`);
   }
 
-  const from = `FROM sales_items si JOIN sales s ON s.id = si.saleId LEFT JOIN parties pt ON pt.id = s.partyId ${where(conds)}`;
+  const outwardLines = `(SELECT saleId, taxPercentage,
+        SUM(quantity) AS quantity,
+        SUM(netRate - taxAmount) AS taxableValue,
+        SUM(taxAmount) AS taxAmount,
+        SUM(netRate) AS invoiceValue
+      FROM sales_items
+      GROUP BY saleId, taxPercentage
+    UNION ALL
+    SELECT saleId, taxPercentage,
+        SUM(quantity) AS quantity,
+        SUM(taxableAmount) AS taxableValue,
+        SUM(taxAmount) AS taxAmount,
+        SUM(netAmount) AS invoiceValue
+      FROM quick_sale_sale_items
+      WHERE gstVerificationStatus = 'GST_VERIFIED'
+        AND taxableAmount IS NOT NULL
+        AND taxPercentage IS NOT NULL
+        AND taxAmount IS NOT NULL
+      GROUP BY saleId, taxPercentage)`;
+  const from = `FROM ${outwardLines} si
+    JOIN sales s ON s.id = si.saleId
+    LEFT JOIN parties pt ON pt.id = s.partyId ${where(conds)}`;
   const baseSql = `SELECT s.id AS saleId, s.invoiceNumber, s.saleDate AS invoiceDate, s.partyId, pt.name AS partyName, pt.GST AS gstin,
       s.bill_type AS invoiceType, si.taxPercentage AS taxRate, SUM(si.quantity) AS quantity,
-      SUM(si.netRate - si.taxAmount) AS taxableValue, SUM(si.taxAmount) AS taxAmount, SUM(si.netRate) AS invoiceValue
+      SUM(si.taxableValue) AS taxableValue, SUM(si.taxAmount) AS taxAmount, SUM(si.invoiceValue) AS invoiceValue
     ${from} GROUP BY s.id, s.invoiceNumber, s.saleDate, s.partyId, pt.name, pt.GST, s.bill_type, si.taxPercentage`;
-  const summarySql = `SELECT COUNT(DISTINCT s.id) AS invoiceCount, SUM(si.netRate - si.taxAmount) AS taxableValue,
-      SUM(si.taxAmount) AS taxAmount, SUM(si.netRate) AS invoiceValue ${from}`;
+  const summarySql = `SELECT COUNT(DISTINCT s.id) AS invoiceCount, SUM(si.taxableValue) AS taxableValue,
+      SUM(si.taxAmount) AS taxAmount, SUM(si.invoiceValue) AS invoiceValue ${from}`;
 
   const out = await H.runPaged({
     baseSql, params: p, orderBy: sort.orderBy, pg, numeric: ['taxRate', 'quantity', 'taxableValue', 'taxAmount', 'invoiceValue'],
     summarySql, summaryNumeric: ['invoiceCount', 'taxableValue', 'taxAmount', 'invoiceValue'],
   });
-  const byType = await H.run(`SELECT s.bill_type AS invoiceType, COUNT(DISTINCT s.id) AS invoiceCount, SUM(si.netRate - si.taxAmount) AS taxableValue,
-      SUM(si.taxAmount) AS taxAmount, SUM(si.netRate) AS invoiceValue ${from} GROUP BY s.bill_type ORDER BY s.bill_type`, p.values);
-  const byRate = await H.run(`SELECT si.taxPercentage AS taxRate, COUNT(DISTINCT s.id) AS invoiceCount, SUM(si.netRate - si.taxAmount) AS taxableValue,
-      SUM(si.taxAmount) AS taxAmount, SUM(si.netRate) AS invoiceValue ${from} GROUP BY si.taxPercentage ORDER BY si.taxPercentage`, p.values);
+  const byType = await H.run(`SELECT s.bill_type AS invoiceType, COUNT(DISTINCT s.id) AS invoiceCount, SUM(si.taxableValue) AS taxableValue,
+      SUM(si.taxAmount) AS taxAmount, SUM(si.invoiceValue) AS invoiceValue ${from} GROUP BY s.bill_type ORDER BY s.bill_type`, p.values);
+  const byRate = await H.run(`SELECT si.taxPercentage AS taxRate, COUNT(DISTINCT s.id) AS invoiceCount, SUM(si.taxableValue) AS taxableValue,
+      SUM(si.taxAmount) AS taxAmount, SUM(si.invoiceValue) AS invoiceValue ${from} GROUP BY si.taxPercentage ORDER BY si.taxPercentage`, p.values);
   const nums = ['invoiceCount', 'taxableValue', 'taxAmount', 'invoiceValue'];
   out.summary.byInvoiceType = H.normalize(byType, nums);
   out.summary.byTaxRate = H.normalize(byRate, ['taxRate', ...nums]);
@@ -678,10 +737,25 @@ const gstr3bReport = H.handler(async (req, res) => {
     inC.push(`pi.taxPercentage = ${p.add(g.taxRate)}`);
   }
 
+  const outwardLines = `(SELECT saleId, taxPercentage,
+        SUM(netRate - taxAmount) AS taxableValue,
+        SUM(taxAmount) AS taxAmount
+      FROM sales_items
+      GROUP BY saleId, taxPercentage
+    UNION ALL
+    SELECT saleId, taxPercentage,
+        SUM(taxableAmount) AS taxableValue,
+        SUM(taxAmount) AS taxAmount
+      FROM quick_sale_sale_items
+      WHERE gstVerificationStatus = 'GST_VERIFIED'
+        AND taxableAmount IS NOT NULL
+        AND taxPercentage IS NOT NULL
+        AND taxAmount IS NOT NULL
+      GROUP BY saleId, taxPercentage)`;
   const baseSql = `
     SELECT '3.1 Outward supplies' AS section, DATE_FORMAT(s.saleDate, '%Y-%m') AS period, si.taxPercentage AS taxRate,
-        SUM(si.netRate - si.taxAmount) AS taxableValue, SUM(si.taxAmount) AS taxAmount, COUNT(DISTINCT s.id) AS documentCount
-      FROM sales_items si JOIN sales s ON s.id = si.saleId ${where(outC)}
+        SUM(si.taxableValue) AS taxableValue, SUM(si.taxAmount) AS taxAmount, COUNT(DISTINCT s.id) AS documentCount
+      FROM ${outwardLines} si JOIN sales s ON s.id = si.saleId ${where(outC)}
       GROUP BY DATE_FORMAT(s.saleDate, '%Y-%m'), si.taxPercentage
     UNION ALL
     SELECT '4 Eligible ITC (purchases)', DATE_FORMAT(pu.purchaseDate, '%Y-%m'), pi.taxPercentage,
@@ -784,8 +858,11 @@ const partyOutstanding = H.handler(async (req, res) => {
           THEN COALESCE((SELECT SUM(_l.amount) FROM ${c.payTable} _l WHERE _l.${c.payFk} = ${a}.id AND _l.paymentDate < ${ph}), 0)
           ELSE ${H.effPaid(a)} END)`;
     }
+    const balance = kind === 'purchase'
+      ? H.purchaseBalanceDue(a)
+      : `GREATEST(${a}.totalAmount - ${paid}, 0)`;
     return `SELECT '${label}' AS txnType, ${a}.id AS docId, ${a}.partyId, ${a}.${c.dateCol} AS txnDate, ${a}.totalAmount AS amount,
-        ${paid} AS paid, GREATEST(${a}.totalAmount - ${paid}, 0) AS balance, ${a}.paymentStatus AS storedStatus
+        ${paid} AS paid, ${balance} AS balance, ${a}.paymentStatus AS storedStatus
       FROM ${c.table} ${a} WHERE ${conds.join(' AND ')}`;
   };
   const branches = [];

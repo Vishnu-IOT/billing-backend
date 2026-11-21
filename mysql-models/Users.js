@@ -19,6 +19,15 @@ const User = sequelize.define(
       },
       onDelete: 'CASCADE',
     },
+    roleId: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      references: {
+        model: 'roles',
+        key: 'id',
+      },
+      onDelete: 'RESTRICT',
+    },
 
     name: {
       type: DataTypes.STRING(100),

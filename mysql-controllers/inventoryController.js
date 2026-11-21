@@ -4,6 +4,7 @@ const StockTransferItem = require('../mysql-models/StockTransferItem');
 const Product = require('../mysql-models/Product');
 const Warehouse = require('../mysql-models/Warehouse');
 const sequelize = require('../config/sqldb');
+const { normalizeProductQuantity } = require('../utils/productQuantity');
 
 // Get Stock Ledger audit logs
 const getStockLedger = async (req, res) => {
@@ -90,8 +91,27 @@ const createTransfer = async (req, res) => {
       return res.status(400).json({ message: 'Source and destination warehouse cannot be the same' });
     }
 
+    const normalizedItems = [];
+    for (const item of items) {
+      const product = await Product.findByPk(item.productId, { transaction });
+      if (!product) {
+        throw new Error(`Product not found: ${item.productId}`);
+      }
+      const quantity = normalizeProductQuantity(
+        {
+          quantity: item.quantitySent,
+          quantityUnit: item.quantityUnit ?? item.unit,
+        },
+        product
+      );
+      normalizedItems.push({ item, product, quantity });
+    }
+
     const transferNumber = `TRF-${Date.now().toString().slice(-6)}`;
-    const totalQuantity = items.reduce((sum, item) => sum + Number(item.quantitySent || 0), 0);
+    const totalQuantity = normalizedItems.reduce(
+      (sum, entry) => sum + entry.quantity.quantity,
+      0
+    );
 
     const transfer = await StockTransfer.create(
       {
@@ -106,22 +126,20 @@ const createTransfer = async (req, res) => {
       { transaction }
     );
 
-    for (const item of items) {
+    for (const { item, product, quantity } of normalizedItems) {
       await StockTransferItem.create(
         {
           stockTransferId: transfer.id,
           productId: item.productId,
-          quantitySent: Number(item.quantitySent),
+          quantitySent: quantity.quantity,
           quantityReceived: 0,
+          quantityUnit: quantity.quantityUnit,
         },
         { transaction }
       );
 
       // Deduct stock from source warehouse / product
-      const product = await Product.findByPk(item.productId, { transaction });
-      if (product) {
-        await product.decrement('stockQuantity', { by: Number(item.quantitySent), transaction });
-      }
+      await product.decrement('stockQuantity', { by: quantity.quantity, transaction });
 
       // Log Stock Movement OUT
       await StockMovement.create(
@@ -129,7 +147,8 @@ const createTransfer = async (req, res) => {
           warehouseId: fromWarehouseId,
           productId: item.productId,
           movementType: 'TRANSFER_OUT',
-          quantity: -Math.abs(Number(item.quantitySent)),
+          quantity: -quantity.quantity,
+          quantityUnit: quantity.quantityUnit,
           referenceType: 'StockTransfer',
           referenceId: transfer.transferNumber,
           notes: `Transfer dispatched to warehouse #${toWarehouseId}`,
@@ -147,7 +166,7 @@ const createTransfer = async (req, res) => {
     });
   } catch (error) {
     await transaction.rollback();
-    return res.status(500).json({ message: error.message });
+    return res.status(error.code === 'INVALID_PRODUCT_QUANTITY' ? 400 : 500).json({ message: error.message });
   }
 };
 
@@ -188,6 +207,7 @@ const receiveTransfer = async (req, res) => {
           productId: item.productId,
           movementType: 'TRANSFER_IN',
           quantity: qty,
+          quantityUnit: item.quantityUnit,
           referenceType: 'StockTransfer',
           referenceId: transfer.transferNumber,
           notes: `Transfer received from warehouse #${transfer.fromWarehouseId}`,

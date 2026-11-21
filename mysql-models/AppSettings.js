@@ -148,6 +148,49 @@ const AppSettings = sequelize.define(
             defaultValue: true,
         },
 
+        /* ===== LOYALTY ===== */
+        loyaltyEnabled: {
+            type: DataTypes.BOOLEAN,
+            allowNull: false,
+            defaultValue: true,
+        },
+
+        loyaltyAmountPerPoint: {
+            type: DataTypes.DECIMAL(12, 2),
+            allowNull: false,
+            defaultValue: 100,
+        },
+
+        loyaltyPointsPerUnit: {
+            type: DataTypes.INTEGER,
+            allowNull: false,
+            defaultValue: 1,
+        },
+
+        loyaltyRedemptionEnabled: {
+            type: DataTypes.BOOLEAN,
+            allowNull: false,
+            defaultValue: false,
+        },
+
+        loyaltyRedemptionAmountPerPoint: {
+            type: DataTypes.DECIMAL(12, 2),
+            allowNull: false,
+            defaultValue: 1,
+        },
+
+        loyaltyMinimumRedemptionPoints: {
+            type: DataTypes.INTEGER,
+            allowNull: false,
+            defaultValue: 1,
+        },
+
+        loyaltyMaxRedemptionPercentage: {
+            type: DataTypes.DECIMAL(5, 2),
+            allowNull: false,
+            defaultValue: 100,
+        },
+
         /* ===== POS & PRINTING ===== */
         printerWidth: {
             type: DataTypes.ENUM('58', '80'),

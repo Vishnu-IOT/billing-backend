@@ -45,14 +45,59 @@ const Product = sequelize.define(
       allowNull: false,
     },
 
+    unbatchedAverageCost: {
+      type: DataTypes.DECIMAL(12, 4),
+      allowNull: true,
+    },
+
+    purchasePriceType: {
+      type: DataTypes.ENUM('WITH_GST', 'WITHOUT_GST'),
+      allowNull: false,
+      defaultValue: 'WITHOUT_GST',
+    },
+
+    sellingPriceType: {
+      type: DataTypes.ENUM('WITH_GST', 'WITHOUT_GST'),
+      allowNull: false,
+      defaultValue: 'WITHOUT_GST',
+    },
+
+    profitMargin: {
+      type: DataTypes.DECIMAL(8, 2),
+      allowNull: true,
+      defaultValue: null,
+    },
+
     discount: {
       type: DataTypes.FLOAT,
       defaultValue: 0,
     },
 
     stockQuantity: {
-      type: DataTypes.INTEGER,
+      type: DataTypes.DECIMAL(15, 3),
       defaultValue: 0,
+      get() {
+        const value = this.getDataValue('stockQuantity');
+        return value === null || value === undefined ? value : Number(value);
+      },
+    },
+
+    unitType: {
+      type: DataTypes.ENUM('PIECE', 'WEIGHT'),
+      allowNull: false,
+      defaultValue: 'PIECE',
+    },
+
+    baseUnit: {
+      type: DataTypes.ENUM('PCS', 'KG'),
+      allowNull: false,
+      defaultValue: 'PCS',
+    },
+
+    allowDecimalQuantity: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false,
     },
 
     unit: {
@@ -62,7 +107,7 @@ const Product = sequelize.define(
 
     categoryId: {
       type: DataTypes.INTEGER,
-      allowNull: false,
+      allowNull: true,
       references: {
         model: 'categories',
         key: 'id',

@@ -227,25 +227,47 @@ const run = (sql, replacements) =>
 
 const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
 
-function normalize(rows, numericKeys) {
+function normalize(rows, numericKeys, precisionByKey = {}) {
   return rows.map((r) => {
     const out = { ...r };
     numericKeys.forEach((k) => {
-      if (k in out) out[k] = out[k] === null || out[k] === undefined ? 0 : round2(out[k]);
+      if (k in out) {
+        if (out[k] === null || out[k] === undefined) {
+          out[k] = 0;
+        } else {
+          const precision = precisionByKey[k];
+          if (precision === undefined || precision === 2) {
+            out[k] = round2(out[k]);
+          } else {
+            const factor = 10 ** precision;
+            out[k] = Math.round((Number(out[k]) + Number.EPSILON) * factor) / factor;
+          }
+        }
+      }
     });
     return out;
   });
 }
 
-function normalizeObject(obj, numericKeys) {
-  return normalize([obj || {}], numericKeys)[0];
+function normalizeObject(obj, numericKeys, precisionByKey) {
+  return normalize([obj || {}], numericKeys, precisionByKey)[0];
 }
 
 // Paginated "grouped / listed" query:
 //   baseSql  = the full filtered query WITHOUT ORDER/LIMIT (one row per result row)
 //   The page, the count and the summary all run against that same base so
 //   totals are over the entire filtered dataset, never just the current page.
-async function runPaged({ baseSql, params, orderBy, pg, numeric = [], summarySql, summaryNumeric }) {
+async function runPaged({
+  baseSql,
+  params,
+  orderBy,
+  pg,
+  numeric = [],
+  numericPrecision,
+  summarySql,
+  summaryNumeric,
+  summaryNumericPrecision,
+}) {
   const countP = run(`SELECT COUNT(*) AS total FROM (${baseSql}) t`, params.values);
   const sumP = summarySql ? run(summarySql, params.values) : Promise.resolve(null);
   const [countRows, sumRows] = await Promise.all([countP, sumP]);
@@ -263,9 +285,11 @@ async function runPaged({ baseSql, params, orderBy, pg, numeric = [], summarySql
     : [];
 
   return {
-    data: normalize(rows, numeric),
+    data: normalize(rows, numeric, numericPrecision),
     pagination: { total, page, limit, totalPages: total ? Math.ceil(total / limit) : 0 },
-    summary: sumRows ? normalizeObject(sumRows[0], summaryNumeric || numeric) : undefined,
+    summary: sumRows
+      ? normalizeObject(sumRows[0], summaryNumeric || numeric, summaryNumericPrecision || numericPrecision)
+      : undefined,
   };
 }
 
@@ -294,6 +318,17 @@ const handler = (fn) => async (req, res) => {
 const effPaid = (a) => `(CASE WHEN ${a}.paymentStatus = 'Paid' THEN ${a}.totalAmount ELSE ${a}.amountPaid END)`;
 const balanceDue = (a) =>
   `(CASE WHEN ${a}.paymentStatus IN ('Paid','Cancelled') THEN 0 ELSE GREATEST(${a}.totalAmount - ${a}.amountPaid, 0) END)`;
+const purchaseBalanceDue = (a) =>
+  `(CASE WHEN ${a}.paymentStatus IN ('Paid','Cancelled') THEN 0 ELSE GREATEST(
+    ${a}.totalAmount - ${a}.amountPaid -
+    COALESCE((SELECT SUM(_pr.appliedToPayable) FROM purchase_returns _pr
+      WHERE _pr.purchaseId = ${a}.id AND _pr.status = 'ACTIVE'), 0) -
+    COALESCE((SELECT SUM(_pca.amount) FROM purchase_return_credit_applications _pca
+      INNER JOIN purchase_returns _prc ON _prc.id = _pca.purchaseReturnId
+      WHERE _pca.purchaseId = ${a}.id AND _pca.status = 'ACTIVE'
+        AND _prc.status = 'ACTIVE'), 0),
+    0
+  ) END)`;
 
 // Party type is not a column on `parties` (one table for customers and
 // suppliers). It is derived from what the party has actually transacted:
@@ -339,6 +374,7 @@ module.exports = {
   handler,
   effPaid,
   balanceDue,
+  purchaseBalanceDue,
   partyTypeExpr,
   partyTypeCondition,
 };

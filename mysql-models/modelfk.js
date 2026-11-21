@@ -3,8 +3,15 @@ const Product = require('./Product');
 const Party = require('./Party');
 const Sale = require('./SalesBill');
 const SalesItem = require('./Sales-Items');
+const QuickSaleAlias = require('./QuickSaleAlias');
+const QuickSaleSaleItem = require('./QuickSaleSaleItem');
+const QuickSaleReturn = require('./QuickSaleReturn');
+const QuickSaleAuditEvent = require('./QuickSaleAuditEvent');
 const Purchase = require('./PurchaseBill');
 const PurchaseItem = require('./Purchase-Items');
+const PurchaseReturn = require('./PurchaseReturn');
+const PurchaseReturnItem = require('./PurchaseReturnItem');
+const PurchaseReturnCreditApplication = require('./PurchaseReturnCreditApplication');
 const Company = require('./Company');
 const CompanyFinancials = require('./Company_Financials');
 const InvoiceSettings = require('./Invoice_Settings');
@@ -22,7 +29,35 @@ const NotificationTemplate = require('./NotificationTemplate');
 const PaymentIn = require('./PaymentIn');
 const PaymentOut = require('./PaymentOut');
 const POSShift = require('./POSShift');
+const POSCounter = require('./POSCounter');
 const HoldBill = require('./HoldBill');
+const LoyaltyGift = require('./LoyaltyGift');
+const LoyaltyRedemption = require('./LoyaltyRedemption');
+const LoyaltyTransaction = require('./LoyaltyTransaction');
+const PromotionalOffer = require('./PromotionalOffer');
+const PromotionalCampaign = require('./PromotionalCampaign');
+const CampaignProduct = require('./CampaignProduct');
+const PromotionApplication = require('./PromotionApplication');
+const Role = require('./Role');
+const Permission = require('./Permission');
+const RolePermission = require('./RolePermission');
+
+User.belongsTo(Role, { foreignKey: 'roleId', as: 'assignedRole' });
+Role.hasMany(User, { foreignKey: 'roleId', as: 'users' });
+Role.belongsToMany(Permission, {
+  through: RolePermission,
+  foreignKey: 'roleId',
+  otherKey: 'permissionId',
+  as: 'permissions',
+});
+Permission.belongsToMany(Role, {
+  through: RolePermission,
+  foreignKey: 'permissionId',
+  otherKey: 'roleId',
+  as: 'roles',
+});
+RolePermission.belongsTo(Role, { foreignKey: 'roleId' });
+RolePermission.belongsTo(Permission, { foreignKey: 'permissionId' });
 
 // Category → Product
 Category.hasMany(Product, {
@@ -52,6 +87,16 @@ Sale.belongsTo(Customer, {
   foreignKey: 'customerId',
 });
 
+Sale.hasMany(PromotionApplication, {
+  foreignKey: 'saleId',
+  as: 'promotionApplications',
+  onDelete: 'CASCADE',
+});
+
+PromotionApplication.belongsTo(Sale, {
+  foreignKey: 'saleId',
+});
+
 // User → Sale
 User.hasMany(Sale, {
   foreignKey: 'userId',
@@ -76,8 +121,58 @@ Sale.hasMany(SalesItem, {
   onDelete: 'CASCADE',
 });
 
+Sale.hasMany(QuickSaleSaleItem, {
+  foreignKey: 'saleId',
+  as: 'QuickSaleItems',
+  onDelete: 'CASCADE',
+});
+QuickSaleSaleItem.belongsTo(Sale, { foreignKey: 'saleId' });
+QuickSaleAlias.hasMany(QuickSaleSaleItem, {
+  foreignKey: 'quickSaleAliasId',
+  as: 'saleItems',
+});
+QuickSaleSaleItem.belongsTo(QuickSaleAlias, {
+  foreignKey: 'quickSaleAliasId',
+  as: 'alias',
+});
+QuickSaleAlias.belongsTo(Product, {
+  foreignKey: 'linkedProductId',
+  as: 'linkedProduct',
+});
+Product.hasMany(QuickSaleAlias, {
+  foreignKey: 'linkedProductId',
+  as: 'quickSaleAliases',
+});
+Sale.hasMany(QuickSaleReturn, { foreignKey: 'saleId', as: 'QuickSaleReturns' });
+QuickSaleReturn.belongsTo(Sale, { foreignKey: 'saleId' });
+QuickSaleSaleItem.hasMany(QuickSaleReturn, {
+  foreignKey: 'quickSaleSaleItemId',
+  as: 'returns',
+});
+QuickSaleReturn.belongsTo(QuickSaleSaleItem, {
+  foreignKey: 'quickSaleSaleItemId',
+  as: 'saleItem',
+});
+QuickSaleAlias.hasMany(QuickSaleAuditEvent, {
+  foreignKey: 'quickSaleAliasId',
+  as: 'auditEvents',
+});
+QuickSaleAuditEvent.belongsTo(QuickSaleAlias, { foreignKey: 'quickSaleAliasId' });
+QuickSaleAuditEvent.belongsTo(User, {
+  foreignKey: 'actorUserId',
+  as: 'actor',
+});
+
 SalesItem.belongsTo(Sale, {
   foreignKey: 'saleId',
+});
+
+ProductBatch.hasMany(SalesItem, {
+  foreignKey: 'productBatchId',
+});
+
+SalesItem.belongsTo(ProductBatch, {
+  foreignKey: 'productBatchId',
 });
 
 // Purchase → PurchaseItem
@@ -89,6 +184,47 @@ Purchase.hasMany(PurchaseItem, {
 PurchaseItem.belongsTo(Purchase, {
   foreignKey: 'purchaseId',
 });
+
+ProductBatch.hasMany(PurchaseItem, {
+  foreignKey: 'productBatchId',
+});
+
+PurchaseItem.belongsTo(ProductBatch, {
+  foreignKey: 'productBatchId',
+});
+
+Purchase.hasMany(PurchaseReturn, {
+  foreignKey: 'purchaseId',
+  as: 'purchaseReturns',
+});
+PurchaseReturn.belongsTo(Purchase, { foreignKey: 'purchaseId' });
+Party.hasMany(PurchaseReturn, { foreignKey: 'supplierId' });
+PurchaseReturn.belongsTo(Party, { foreignKey: 'supplierId' });
+PurchaseReturn.belongsTo(User, { foreignKey: 'createdBy', as: 'createdByUser' });
+PurchaseReturn.belongsTo(User, { foreignKey: 'cancelledBy', as: 'cancelledByUser' });
+PurchaseReturn.hasMany(PurchaseReturnItem, {
+  foreignKey: 'purchaseReturnId',
+  as: 'items',
+  onDelete: 'RESTRICT',
+});
+PurchaseReturnItem.belongsTo(PurchaseReturn, {
+  foreignKey: 'purchaseReturnId',
+  as: 'purchaseReturn',
+});
+PurchaseReturnItem.belongsTo(PurchaseItem, { foreignKey: 'purchaseItemId' });
+PurchaseItem.hasMany(PurchaseReturnItem, { foreignKey: 'purchaseItemId' });
+PurchaseReturnItem.belongsTo(Product, { foreignKey: 'productId' });
+PurchaseReturnItem.belongsTo(ProductBatch, { foreignKey: 'productBatchId' });
+PurchaseReturnItem.belongsTo(Purchase, { foreignKey: 'purchaseId' });
+PurchaseReturn.hasMany(PurchaseReturnCreditApplication, {
+  foreignKey: 'purchaseReturnId',
+  as: 'creditApplications',
+});
+PurchaseReturnCreditApplication.belongsTo(PurchaseReturn, {
+  foreignKey: 'purchaseReturnId',
+  as: 'purchaseReturn',
+});
+PurchaseReturnCreditApplication.belongsTo(Purchase, { foreignKey: 'purchaseId' });
 
 // Product → SalesItem
 Product.hasMany(SalesItem, {
@@ -146,6 +282,56 @@ Product.hasMany(ProductBatch, {
 
 ProductBatch.belongsTo(Product, {
   foreignKey: 'productId',
+});
+
+// Promotions
+Product.hasMany(PromotionalOffer, {
+  foreignKey: 'productId',
+  as: 'promotionalOffers',
+  onDelete: 'CASCADE',
+});
+
+PromotionalOffer.belongsTo(Product, {
+  foreignKey: 'productId',
+});
+PromotionalOffer.belongsTo(Product, {
+  foreignKey: 'giftProductId',
+  as: 'giftProduct',
+});
+
+Category.hasMany(PromotionalOffer, {
+  foreignKey: 'categoryId',
+  as: 'promotionalOffers',
+  onDelete: 'CASCADE',
+});
+
+PromotionalOffer.belongsTo(Category, {
+  foreignKey: 'categoryId',
+});
+
+PromotionalCampaign.hasMany(CampaignProduct, {
+  foreignKey: 'campaignId',
+  as: 'products',
+  onDelete: 'CASCADE',
+});
+
+CampaignProduct.belongsTo(PromotionalCampaign, {
+  foreignKey: 'campaignId',
+  as: 'campaign',
+});
+
+CampaignProduct.belongsTo(Product, { foreignKey: 'productId', as: 'product' });
+CampaignProduct.belongsTo(Product, { foreignKey: 'giftProductId', as: 'giftProduct' });
+CampaignProduct.belongsTo(Category, { foreignKey: 'categoryId', as: 'category' });
+
+PromotionalCampaign.hasMany(PromotionApplication, {
+  foreignKey: 'campaignId',
+  as: 'applications',
+});
+
+PromotionalOffer.hasMany(PromotionApplication, {
+  foreignKey: 'offerId',
+  as: 'applications',
 });
 
 // Product → StockAdjustment
@@ -298,6 +484,20 @@ const Brand = require('./Brand');
 const ProductVariant = require('./ProductVariant');
 const AuditLog = require('./AuditLog');
 
+Customer.hasMany(LoyaltyRedemption, { foreignKey: 'customerId', as: 'loyaltyRedemptions' });
+LoyaltyRedemption.belongsTo(Customer, { foreignKey: 'customerId', as: 'customer' });
+LoyaltyRedemption.belongsTo(LoyaltyGift, { foreignKey: 'giftId', as: 'gift' });
+LoyaltyRedemption.belongsTo(User, { foreignKey: 'performedBy', as: 'performedByUser' });
+Customer.hasMany(LoyaltyTransaction, { foreignKey: 'customerId', as: 'loyaltyTransactions' });
+LoyaltyTransaction.belongsTo(Customer, { foreignKey: 'customerId', as: 'customer' });
+LoyaltyTransaction.belongsTo(LoyaltyRedemption, {
+  foreignKey: 'redemptionId',
+  as: 'redemption',
+});
+LoyaltyTransaction.belongsTo(User, { foreignKey: 'performedBy', as: 'performedByUser' });
+Sale.hasMany(LoyaltyTransaction, { foreignKey: 'saleId', as: 'loyaltyTransactions' });
+LoyaltyTransaction.belongsTo(Sale, { foreignKey: 'saleId', as: 'sale' });
+
 Brand.hasMany(Product, { foreignKey: 'brandId' });
 Product.belongsTo(Brand, { foreignKey: 'brandId' });
 
@@ -326,13 +526,20 @@ module.exports = {
   Expense,
   StockAdjustment,
   ProductBatch,
+  PromotionalOffer,
+  PromotionalCampaign,
+  CampaignProduct,
   EInvoice,
   EWayBill,
   NotificationTemplate,
   PaymentIn,
   PaymentOut,
   POSShift,
+  POSCounter,
   HoldBill,
+  LoyaltyGift,
+  LoyaltyRedemption,
+  LoyaltyTransaction,
   Warehouse,
   StockMovement,
   StockTransfer,
@@ -344,7 +551,3 @@ module.exports = {
   ProductVariant,
   AuditLog,
 };
-
-
-
-

@@ -7,6 +7,77 @@
 const AppSettings = require('../mysql-models/AppSettings');
 const Company = require('../mysql-models/Company');
 const InvoiceSettings = require('../mysql-models/Invoice_Settings');
+const {
+    LOYALTY_SETTING_FIELDS,
+    validateLoyaltySettingsUpdate,
+} = require('../utils/loyaltyEarning');
+const { getSettingsUpdate } = require('../utils/settingsPayload');
+
+const containsLoyaltySettings = (settings) =>
+    settings && LOYALTY_SETTING_FIELDS.some((field) =>
+        Object.prototype.hasOwnProperty.call(settings, field)
+    );
+
+const POS_SETTING_FIELDS = [
+        'id',
+        'companyId',
+        'invoicePrefix',
+        'invoiceYearFormat',
+        'invoiceSeparator',
+        'invoiceStartingNumber',
+        'billTheme',
+        'termsAndConditions',
+        'dateFormat',
+        'showBankDetails',
+        'showUpiQr',
+        'showSignature',
+        'gstRegistrationType',
+        'defaultTaxRate',
+        'taxCalculationMode',
+        'hsnDigits',
+        'roundOffInvoices',
+        'reverseCharge',
+        'defaultPaymentMethod',
+        'acceptedPaymentMethods',
+        'paymentRoundOff',
+        'loyaltyEnabled',
+        'loyaltyAmountPerPoint',
+        'loyaltyPointsPerUnit',
+        'loyaltyRedemptionEnabled',
+        'loyaltyRedemptionAmountPerPoint',
+        'loyaltyMinimumRedemptionPoints',
+        'loyaltyMaxRedemptionPercentage',
+        'printerWidth',
+        'autoPrint',
+        'scannerEnabled',
+        'cameraEnabled',
+        'receiptHeader',
+        'receiptFooter',
+        'showGstOnReceipt',
+        'posGridItemDisplay',
+];
+
+const PURCHASE_SETTING_FIELDS = [
+        'id',
+        'companyId',
+        'invoicePrefix',
+        'invoiceYearFormat',
+        'invoiceSeparator',
+        'invoiceStartingNumber',
+        'termsAndConditions',
+        'defaultDueDays',
+        'dateFormat',
+        'gstRegistrationType',
+        'defaultTaxRate',
+        'taxCalculationMode',
+        'hsnDigits',
+        'roundOffInvoices',
+        'reverseCharge',
+        'defaultPaymentMethod',
+        'acceptedPaymentMethods',
+        'defaultPaymentTerms',
+        'paymentRoundOff',
+];
 
 /**
  * Keeps invoice_settings.invoice_prefix in sync with app_settings.invoicePrefix.
@@ -34,7 +105,10 @@ const syncInvoicePrefixToInvoiceSettings = async (companyId, invoicePrefix) => {
 const getAppSettings = async (req, res) => {
     try {
         // Get companyId from authenticated user (assuming it's set in middleware)
-        const companyId = req.query.companyId || 1; // Fallback to company 1
+        const companyId = req.user?.companyId;
+        if (!companyId || (req.query.companyId && Number(req.query.companyId) !== Number(companyId))) {
+            return res.status(403).json({ success: false, message: 'Cannot access settings for another company' });
+        }
         const userId = req.user?.id || null; // Optional: user-specific settings
 
         let settings = await AppSettings.findOne({
@@ -49,9 +123,23 @@ const getAppSettings = async (req, res) => {
             });
         }
 
+        const hasSettingsAccess = req.isSystemAdministrator ||
+            req.permissions?.has('settings.configuration.view');
+        const isPurchaseManager = req.authRole?.systemKey === 'PURCHASE_MANAGER';
+        const data = settings.get({ plain: true });
+        if (isPurchaseManager && !hasSettingsAccess) {
+            for (const field of Object.keys(data)) {
+                if (!PURCHASE_SETTING_FIELDS.includes(field)) delete data[field];
+            }
+        } else if (!hasSettingsAccess) {
+            for (const field of Object.keys(data)) {
+                if (!POS_SETTING_FIELDS.includes(field)) delete data[field];
+            }
+        }
+
         return res.status(200).json({
             success: true,
-            data: settings,
+            data,
         });
     } catch (error) {
         console.error('Error fetching settings:', error);
@@ -69,10 +157,18 @@ const getAppSettings = async (req, res) => {
  */
 const updateAppSettings = async (req, res) => {
     try {
-        const companyId = req.body.companyId || 1;
-        const settingsUpdate = req.body.settings;
+        const companyId = req.user?.companyId;
+        if (!companyId || (req.body.companyId && Number(req.body.companyId) !== Number(companyId))) {
+            return res.status(403).json({ success: false, message: 'Cannot update settings for another company' });
+        }
+        let settingsUpdate = getSettingsUpdate(req.body);
 
-        if (!settingsUpdate || Object.keys(settingsUpdate).length === 0) {
+        if (
+            !settingsUpdate ||
+            typeof settingsUpdate !== 'object' ||
+            Array.isArray(settingsUpdate) ||
+            Object.keys(settingsUpdate).length === 0
+        ) {
             return res.status(400).json({
                 success: false,
                 message: 'No settings provided to update',
@@ -83,6 +179,21 @@ const updateAppSettings = async (req, res) => {
         let settings = await AppSettings.findOne({
             where: { companyId },
         });
+
+        if (containsLoyaltySettings(settingsUpdate)) {
+            const currentSettings = settings || AppSettings.build({ companyId });
+            try {
+                settingsUpdate = {
+                    ...settingsUpdate,
+                    ...validateLoyaltySettingsUpdate(settingsUpdate, currentSettings),
+                };
+            } catch (validationError) {
+                return res.status(400).json({
+                    success: false,
+                    message: validationError.message,
+                });
+            }
+        }
 
         // Create if not exists
         if (!settings) {
@@ -121,7 +232,11 @@ const updateAppSettings = async (req, res) => {
 const updateSettingField = async (req, res) => {
     try {
         const { field } = req.params;
-        const { value, companyId = 1 } = req.body;
+        const { value } = req.body;
+        const companyId = req.user?.companyId;
+        if (!companyId || (req.body.companyId && Number(req.body.companyId) !== Number(companyId))) {
+            return res.status(403).json({ success: false, message: 'Cannot update settings for another company' });
+        }
 
         if (!field || value === undefined) {
             return res.status(400).json({
@@ -155,6 +270,13 @@ const updateSettingField = async (req, res) => {
             'creditLimitWarning',
             'defaultCreditLimit',
             'paymentRoundOff',
+            'loyaltyEnabled',
+            'loyaltyAmountPerPoint',
+            'loyaltyPointsPerUnit',
+            'loyaltyRedemptionEnabled',
+            'loyaltyRedemptionAmountPerPoint',
+            'loyaltyMinimumRedemptionPoints',
+            'loyaltyMaxRedemptionPercentage',
             'printerWidth',
             'autoPrint',
             'scannerEnabled',
@@ -176,13 +298,29 @@ const updateSettingField = async (req, res) => {
             where: { companyId },
         });
 
+        let validatedUpdate = { [field]: value };
+        if (LOYALTY_SETTING_FIELDS.includes(field)) {
+            const currentSettings = settings || AppSettings.build({ companyId });
+            try {
+                validatedUpdate = validateLoyaltySettingsUpdate(
+                    validatedUpdate,
+                    currentSettings
+                );
+            } catch (validationError) {
+                return res.status(400).json({
+                    success: false,
+                    message: validationError.message,
+                });
+            }
+        }
+
         if (!settings) {
             settings = await AppSettings.create({
                 companyId,
-                [field]: value,
+                ...validatedUpdate,
             });
         } else {
-            await settings.update({ [field]: value });
+            await settings.update(validatedUpdate);
         }
 
         if (field === 'invoicePrefix') {
@@ -210,7 +348,10 @@ const updateSettingField = async (req, res) => {
  */
 const resetSettings = async (req, res) => {
     try {
-        const companyId = req.body.companyId || 1;
+        const companyId = req.user?.companyId;
+        if (!companyId || (req.body.companyId && Number(req.body.companyId) !== Number(companyId))) {
+            return res.status(403).json({ success: false, message: 'Cannot reset settings for another company' });
+        }
 
         await AppSettings.destroy({
             where: { companyId },
@@ -243,6 +384,9 @@ const getSettingsByCompanies = async (req, res) => {
     try {
         const { companyIds } = req.params; // comma-separated IDs
         const idArray = companyIds.split(',').map(Number);
+        if (!req.user?.companyId || idArray.some((id) => id !== Number(req.user.companyId))) {
+            return res.status(403).json({ success: false, message: 'Cannot read settings for another company' });
+        }
 
         const settingsList = await AppSettings.findAll({
             where: {

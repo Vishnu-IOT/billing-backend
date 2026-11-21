@@ -17,6 +17,9 @@ const createBrand = async (req, res) => {
     const brand = await Brand.create({ name, logo, description, isActive: true });
     return res.status(201).json({ success: true, message: 'Brand created', data: brand });
   } catch (error) {
+    if (error.name === 'SequelizeUniqueConstraintError') {
+      return res.status(409).json({ message: 'A brand with this name already exists' });
+    }
     return res.status(500).json({ message: error.message });
   }
 };

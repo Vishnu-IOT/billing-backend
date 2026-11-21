@@ -224,6 +224,8 @@ const addPaymentOut = async (req, res) => {
 
     let newStatus;
     let newAmountPaid;
+    let appliedToPayable = 0;
+    let appliedSupplierCredits = 0;
     let purchase = null;
 
     if (purchaseId) {
@@ -235,16 +237,39 @@ const addPaymentOut = async (req, res) => {
 
       const totalAmount = Number(purchase.totalAmount || 0);
       const alreadyPaid = Number(purchase.amountPaid || 0);
+      const PurchaseReturn = require('../mysql-models/PurchaseReturn');
+      appliedToPayable = Number(await PurchaseReturn.sum('appliedToPayable', {
+        where: { purchaseId: purchase.id, status: 'ACTIVE' },
+        transaction,
+      }) || 0);
+      appliedSupplierCredits = Number(
+        await require('../mysql-models/PurchaseReturnCreditApplication').sum('amount', {
+          where: { purchaseId: purchase.id, status: 'ACTIVE' },
+          include: [{
+            model: PurchaseReturn,
+            as: 'purchaseReturn',
+            attributes: [],
+            where: { status: 'ACTIVE' },
+            required: true,
+          }],
+          transaction,
+        }) || 0
+      );
       newAmountPaid = alreadyPaid + paymentAmount;
+      const effectivePaid = purchase.paymentStatus === 'Paid' && alreadyPaid === 0
+        ? totalAmount
+        : alreadyPaid;
 
-      if (newAmountPaid > totalAmount) {
+      if (effectivePaid + paymentAmount + appliedToPayable + appliedSupplierCredits > totalAmount) {
         await transaction.rollback();
         return res.status(400).json({
-          message: `Payment exceeds balance due. Balance due is ${(totalAmount - alreadyPaid).toFixed(2)}`,
+          message: `Payment exceeds balance due. Balance due is ${Math.max(0, totalAmount - effectivePaid - appliedToPayable - appliedSupplierCredits).toFixed(2)}`,
         });
       }
 
-      newStatus = newAmountPaid >= totalAmount ? 'Paid' : newAmountPaid > 0 ? 'Partial' : 'Unpaid';
+      newStatus = newAmountPaid + appliedToPayable + appliedSupplierCredits >= totalAmount
+        ? 'Paid'
+        : newAmountPaid > 0 ? 'Partial' : 'Unpaid';
 
       await purchase.update({ amountPaid: newAmountPaid, paymentStatus: newStatus }, { transaction });
     }
@@ -270,7 +295,12 @@ const addPaymentOut = async (req, res) => {
       data: payment,
       paymentStatus: newStatus || null,
       amountPaid: newAmountPaid ?? null,
-      balanceDue: purchase ? Number(purchase.totalAmount) - newAmountPaid : null,
+      balanceDue: purchase
+        ? Math.max(
+          0,
+          Number(purchase.totalAmount) - newAmountPaid - appliedToPayable - appliedSupplierCredits
+        )
+        : null,
     });
   } catch (error) {
     await transaction.rollback();

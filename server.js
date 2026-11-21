@@ -3,6 +3,8 @@ const dotenv = require('dotenv');
 const cors = require('cors');
 const connectDB = require('./config/db');
 const { errorHandler } = require('./middleware/errorMiddleware');
+const { authenticateRequest } = require('./middleware/rbacAuth');
+const { authorizeApiRequest } = require('./middleware/authorizeApiRequest');
 require('./mysql-models/modelfk');
 
 // Load env vars
@@ -19,12 +21,19 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
 // Routes
-app.use('/api/parties', require('./routes/partyRoutes'));
 app.use('/api/users', require('./routes/usersRoutes'));
+app.use('/api/roles', require('./routes/rolesRoutes'));
+app.use('/api/permissions', require('./routes/permissionsRoutes'));
+app.use('/api', authenticateRequest, authorizeApiRequest);
+app.use('/api/parties', require('./routes/partyRoutes'));
 app.use('/api/customers', require('./routes/customerRoutes'));
+app.use('/api/loyalty', require('./routes/loyaltyRoutes'));
 app.use('/api/products', require('./routes/productRoutes'));
 app.use('/api/sales', require('./routes/salesRoutes'));
+app.use('/api/quick-sales', require('./routes/quickSalesRoutes'));
+app.use('/api/promotions', require('./routes/promotionRoutes'));
 app.use('/api/purchase', require('./routes/purchaseRoutes'));
+app.use('/api/purchase-returns', require('./routes/purchaseReturnRoutes'));
 app.use('/api/category', require('./routes/categoryRoutes'));
 app.use('/api/company', require('./routes/companyRoutes'));
 app.use('/api/dashboard', require('./routes/dashboardRoutes'));

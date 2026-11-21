@@ -9,6 +9,12 @@ const Party = sequelize.define(
       primaryKey: true,
       autoIncrement: true
     },
+    companyId: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      references: { model: 'companies', key: 'id' },
+      onDelete: 'CASCADE',
+    },
     name: {
       type: DataTypes.STRING,
       allowNull: false,
@@ -21,24 +27,26 @@ const Party = sequelize.define(
 
     GST: {
       type: DataTypes.STRING,
+      allowNull: true,
+    },
+    gstRegistrationType: {
+      type: DataTypes.ENUM('REGISTERED', 'UNREGISTERED'),
       allowNull: false,
-      validate: {
-        notEmpty: {
-          msg: "Please add a GST"
-        }
-      }
+      defaultValue: 'UNREGISTERED',
     },
 
     email: {
       type: DataTypes.STRING,
-      allowNull: false,
+      allowNull: true,
       unique: true,
       validate: {
-        isEmail: {
-          msg: "Please add a valid email"
-        },
-        notEmpty: {
-          msg: "Please add an email"
+        isEmailIfPresent(value) {
+          if (value === null || value === undefined || String(value).trim() === "") {
+            return;
+          }
+          if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value).trim())) {
+            throw new Error("Please add a valid email");
+          }
         }
       }
     },

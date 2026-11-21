@@ -1,8 +1,13 @@
 const Users = require('../mysql-models/Users');
 const Company = require('../mysql-models/Company');
 const CompanyFinancials = require('../mysql-models/Company_Financials');
+const Role = require('../mysql-models/Role');
+const RolePermission = require('../mysql-models/RolePermission');
+const Permission = require('../mysql-models/Permission');
 const bcrypt = require('bcryptjs');
 const sequelize = require('../config/sqldb');
+const { logAuditEvent } = require('./auditController');
+const { systemRoleDefinitions } = require('../rbac/permissionCatalog');
 
 /**
  * Converts a string into a URL-friendly slug
@@ -23,21 +28,93 @@ const slugify = (text) => {
 // USER CONTROLLERS
 // ─────────────────────────────────────────────
 
+const getAssignableRole = async (roleId, legacyRole, companyId, req) => {
+  let role;
+  if (roleId !== undefined && roleId !== null && roleId !== '') {
+    const parsedRoleId = Number(roleId);
+    if (!Number.isInteger(parsedRoleId)) return { error: 'Invalid roleId' };
+    role = await Role.findOne({
+      where: { id: parsedRoleId, companyId, status: 'ACTIVE' },
+    });
+  } else if (legacyRole !== undefined) {
+    const legacySystemKeys = {
+      Admin: 'ADMIN',
+      Owner: 'ADMIN',
+      'Purchase Manager': 'PURCHASE_MANAGER',
+      Staff: 'STAFF',
+    };
+    if (!legacySystemKeys[legacyRole]) {
+      return { error: 'Invalid role' };
+    }
+    const systemKey = legacySystemKeys[legacyRole];
+    role = await Role.findOne({ where: { companyId, systemKey, status: 'ACTIVE' } });
+  }
+  if (!role) return { error: 'Select an active role in this company' };
+  if (!role.isSystem || !systemRoleDefinitions[role.systemKey]) {
+    return { error: 'Only the three fixed system roles can be assigned' };
+  }
+
+  if (role.systemKey === 'ADMIN' && !req.isSystemAdministrator) {
+    return { error: 'Only a system administrator can assign the Administrator role', forbidden: true };
+  }
+  if (!req.isSystemAdministrator) {
+    return { error: 'Only Administrators can assign user roles', forbidden: true };
+  }
+  return { role };
+};
+
+const protectLastSystemAdministrator = async (companyId, userId, transaction) => {
+  await Company.findByPk(companyId, {
+    transaction,
+    lock: transaction.LOCK.UPDATE,
+  });
+  const remaining = await Users.count({
+    where: {
+      companyId,
+      is_active: true,
+      id: { [require('sequelize').Op.ne]: userId },
+    },
+    include: [{
+      model: Role,
+      as: 'assignedRole',
+      where: { companyId, systemKey: 'ADMIN', status: 'ACTIVE' },
+      required: true,
+    }],
+    transaction,
+  });
+  if (!remaining) {
+    const error = new Error('The company must retain at least one active system administrator');
+    error.status = 409;
+    throw error;
+  }
+};
+
+const safeUser = (user) => {
+  const data = user.get({ plain: true });
+  delete data.password_hash;
+  return data;
+};
+
 // @desc    Add a new user with role (Admin | Staff | Owner)
 // @route   POST /api/users
 // @access  admin only
 const addUser = async (req, res) => {
   try {
     const { name, email, phone, password, role, status } = req.body;
-
-    const { companyId } = req.params;
-
-    const VALID_ROLES = ['Admin', 'Staff', 'Owner'];
-    if (role && !VALID_ROLES.includes(role)) {
-      return res.status(400).json({
-        message: `Invalid role. Must be one of: ${VALID_ROLES.join(', ')}`,
-      });
+    const companyId = req.user.companyId;
+    if (Number(req.params.companyId) !== Number(companyId)) {
+      return res.status(403).json({ success: false, message: 'Cannot manage users for another company' });
     }
+    if (!name?.trim() || !email || !password) {
+      return res.status(400).json({ success: false, message: 'Name, email, and password are required' });
+    }
+    const { role: assignedRole, error, forbidden } = await getAssignableRole(
+      req.body.roleId,
+      role,
+      companyId,
+      req
+    );
+    if (error) return res.status(forbidden ? 403 : 400).json({ success: false, message: error });
 
     const exists = await Users.findOne({ where: { email } });
     if (exists) {
@@ -55,16 +132,28 @@ const addUser = async (req, res) => {
       email,
       phone,
       password_hash: hashedPassword,
-      is_active: status === '1',
-      role: role || 'Owner', // default role
+      is_active: status === undefined ? true : status === '1' || status === true,
+      roleId: assignedRole.id,
+      role: assignedRole.systemKey === 'STAFF' ? 'Staff' : 'Admin',
+    });
+    await logAuditEvent({
+      userId: req.user.id,
+      action: 'CREATE',
+      module: 'users',
+      targetId: user.id,
+      ipAddress: req.ip,
+      changes: { name: user.name, roleId: user.roleId, is_active: user.is_active },
     });
 
     return res.status(201).json({
       success: true,
       message: 'Users Created successfully',
-      data: user,
+      data: safeUser(user),
     });
   } catch (error) {
+    if (error.name === 'SequelizeUniqueConstraintError') {
+      return res.status(409).json({ success: false, message: 'Email or phone number is already in use' });
+    }
     return res.status(500).json({ success: false, message: error.message });
   }
 };
@@ -74,28 +163,75 @@ const addUser = async (req, res) => {
 // @access  admin only
 const updateUser = async (req, res) => {
   try {
-    const user = await Users.findByPk(req.params.id);
+    const user = await Users.findOne({
+      where: { id: req.params.id, companyId: req.user.companyId },
+    });
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
     }
 
     const { name, email, phone, role, status } = req.body;
-
-    const VALID_ROLES = ['Admin', 'Staff', 'Owner'];
-    if (role && !VALID_ROLES.includes(role)) {
-      return res.status(400).json({
-        message: `Invalid role. Must be one of: ${VALID_ROLES.join(', ')}`,
-      });
+    const hasRoleChange = req.body.roleId !== undefined || role !== undefined;
+    const { role: assignedRole, error, forbidden } = hasRoleChange
+      ? await getAssignableRole(req.body.roleId, role, user.companyId, req)
+      : { role: await Role.findOne({ where: { id: user.roleId, companyId: user.companyId } }) };
+    if (error) return res.status(forbidden ? 403 : 400).json({ success: false, message: error });
+    if (!assignedRole) {
+      return res.status(400).json({ success: false, message: 'User must have an active role' });
     }
 
-    await user.update({ name, email, phone, role, is_active: status === '1' });
+    const nextActive = status === undefined ? user.is_active : status === '1' || status === true;
+    const previousRoleId = user.roleId;
+    const previousStatus = user.is_active;
+    const losingAdmin = user.is_active &&
+      user.roleId &&
+      (assignedRole.id !== user.roleId || !nextActive);
+    const transaction = await sequelize.transaction();
+    try {
+      if (losingAdmin) {
+        const existingRole = await Role.findOne({
+          where: { id: user.roleId, companyId: user.companyId },
+          transaction,
+        });
+        if (existingRole?.systemKey === 'ADMIN') {
+          await protectLastSystemAdministrator(user.companyId, user.id, transaction);
+        }
+      }
+      await user.update({
+        name: name ?? user.name,
+        email: email ?? user.email,
+        phone: phone ?? user.phone,
+        roleId: assignedRole.id,
+        role: assignedRole.systemKey === 'STAFF' ? 'Staff' : 'Admin',
+        is_active: nextActive,
+      }, { transaction });
+      await transaction.commit();
+    } catch (error) {
+      await transaction.rollback();
+      throw error;
+    }
+    await logAuditEvent({
+      userId: req.user.id,
+      action: 'UPDATE',
+      module: 'users',
+      targetId: user.id,
+      ipAddress: req.ip,
+      changes: {
+        roleId: { from: previousRoleId, to: assignedRole.id },
+        is_active: { from: previousStatus, to: nextActive },
+      },
+    });
 
     return res.status(200).json({
       success: true,
       message: 'Users Updated successfully',
-      data: user,
+      data: safeUser(user),
     });
   } catch (error) {
+    if (error.name === 'SequelizeUniqueConstraintError') {
+      return res.status(409).json({ success: false, message: 'Email or phone number is already in use' });
+    }
+    if (error.status) return res.status(error.status).json({ success: false, message: error.message });
     return res.status(500).json({ success: false, message: error.message });
   }
 };
@@ -104,10 +240,14 @@ const updateUser = async (req, res) => {
 // @route   GET /api/users
 const getUsers = async (req, res) => {
   try {
+    if (Number(req.params.companyId) !== Number(req.user.companyId)) {
+      return res.status(403).json({ success: false, message: 'Cannot access users for another company' });
+    }
     const users = await Users.findAll({
+      where: { companyId: req.user.companyId },
       attributes: {
-        exclude: ['password'],
-        include: [
+        exclude: ['password_hash'],
+        include: req.permissions?.has('users.directory.view') ? [
           [
             sequelize.literal(`(
               SELECT COUNT(*)
@@ -124,11 +264,31 @@ const getUsers = async (req, res) => {
             )`),
             'totalSalesAmount'
           ]
-        ]
+        ] : [],
       },
-
+      include: [{
+        model: Role,
+        as: 'assignedRole',
+        where: { companyId: req.user.companyId },
+        required: false,
+        attributes: ['id', 'name', 'systemKey'],
+      }],
       order: [['created_at', 'DESC']],
     });
+
+    if (!req.permissions?.has('users.directory.view')) {
+      return res.status(200).json({
+        success: true,
+        message: 'User names fetched successfully',
+        data: users.map(({ id, name, roleId, role, is_active }) => ({
+          id,
+          name,
+          roleId,
+          role,
+          is_active,
+        })),
+      });
+    }
 
     return res.status(200).json({
       success: true,
@@ -149,20 +309,42 @@ const getUsers = async (req, res) => {
 const deleteUsers = async (req, res) => {
   try {
     const id = req.params.id;
-
-    const deleted = await Users.destroy({
-      where: { id },
-    });
-
-    if (!deleted) {
+    const user = await Users.findOne({ where: { id, companyId: req.user.companyId } });
+    if (!user) {
       return res.status(404).json({ message: 'User not found' });
     }
+    const transaction = await sequelize.transaction();
+    try {
+      const assignedRole = user.roleId
+        ? await Role.findOne({
+          where: { id: user.roleId, companyId: user.companyId },
+          transaction,
+        })
+        : null;
+      if (user.is_active && assignedRole?.systemKey === 'ADMIN') {
+        await protectLastSystemAdministrator(user.companyId, user.id, transaction);
+      }
+      await user.destroy({ transaction });
+      await transaction.commit();
+    } catch (error) {
+      await transaction.rollback();
+      throw error;
+    }
+    await logAuditEvent({
+      userId: req.user.id,
+      action: 'DELETE',
+      module: 'users',
+      targetId: user.id,
+      ipAddress: req.ip,
+      changes: { name: user.name, roleId: user.roleId },
+    });
 
     return res.status(200).json({
       success: true,
       message: 'User deleted successfully',
     });
   } catch (error) {
+    if (error.status) return res.status(error.status).json({ success: false, message: error.message });
     return res.status(500).json({ success: false, message: error.message });
   }
 };
@@ -174,6 +356,9 @@ const deleteUsers = async (req, res) => {
 // ─────────────────────────────────────────────
 const createCompany = async (req, res) => {
   try {
+    if (!req.isSystemAdministrator) {
+      return res.status(403).json({ success: false, message: 'Only a system administrator can create a company' });
+    }
     const {
       legal_name,
       display_name,
@@ -221,25 +406,64 @@ const createCompany = async (req, res) => {
     const existingSlug = await Company.findOne({ where: { slug: baseSlug } });
     const slug = existingSlug ? `${baseSlug}-${Date.now()}` : baseSlug;
 
-    const company = await Company.create({
-      slug,
-      legal_name,
-      display_name: display_name || null,
-      business_type: business_type || 'Wholesale', // schema default
-      industry: industry || null,
-      website: website || null,
-      address_line1: address_line1 || null,
-      address_line2: address_line2 || null,
-      city: city || null,
-      state_code: state_code || null,
-      pincode: pincode || null,
-      country_code: country_code || null,
-      logo_url: logo_url || null,
-      brand_color: brand_color || null,
-      email: email || null,
-      phone: phone || null,
-      is_active: 1,
-    });
+    const transaction = await sequelize.transaction();
+    let company;
+    try {
+      company = await Company.create({
+        slug,
+        legal_name,
+        display_name: display_name || null,
+        business_type: business_type || 'Wholesale',
+        industry: industry || null,
+        website: website || null,
+        address_line1: address_line1 || null,
+        address_line2: address_line2 || null,
+        city: city || null,
+        state_code: state_code || null,
+        pincode: pincode || null,
+        country_code: country_code || null,
+        logo_url: logo_url || null,
+        brand_color: brand_color || null,
+        email: email || null,
+        phone: phone || null,
+        is_active: 1,
+      }, { transaction });
+
+      await Role.bulkCreate(Object.entries(systemRoleDefinitions).map(([systemKey, definition]) => ({
+        companyId: company.id,
+        name: definition.name,
+        description: definition.description,
+        status: 'ACTIVE',
+        isSystem: true,
+        systemKey,
+      })), { transaction });
+      const [systemRoles, permissions] = await Promise.all([
+        Role.findAll({ where: { companyId: company.id, isSystem: true }, transaction }),
+        Permission.findAll({ attributes: ['id', 'permissionKey'], transaction }),
+      ]);
+      const roleBySystemKey = new Map(systemRoles.map((role) => [role.systemKey, role]));
+      const permissionIdByKey = new Map(permissions.map(({ id, permissionKey }) => [permissionKey, id]));
+      const missingRoles = Object.keys(systemRoleDefinitions)
+        .filter((systemKey) => !roleBySystemKey.has(systemKey));
+      const missingPermissions = Object.values(systemRoleDefinitions)
+        .flatMap(({ permissions: rolePermissions }) => [...rolePermissions])
+        .filter((permissionKey) => !permissionIdByKey.has(permissionKey));
+      if (missingRoles.length || missingPermissions.length) {
+        throw new Error('RBAC permission catalogue is not initialized; run Sequelize migrations before creating companies');
+      }
+
+      const rolePermissionRows = Object.entries(systemRoleDefinitions).flatMap(
+        ([systemKey, definition]) => [...definition.permissions].map((permissionKey) => ({
+          roleId: roleBySystemKey.get(systemKey).id,
+          permissionId: permissionIdByKey.get(permissionKey),
+        }))
+      );
+      await RolePermission.bulkCreate(rolePermissionRows, { transaction });
+      await transaction.commit();
+    } catch (error) {
+      await transaction.rollback();
+      throw error;
+    }
 
     return res.status(201).json({
       success: true,
@@ -261,6 +485,9 @@ const createCompany = async (req, res) => {
 // ─────────────────────────────────────────────
 const updateCompany = async (req, res) => {
   try {
+    if (Number(req.params.id) !== Number(req.user.companyId)) {
+      return res.status(403).json({ success: false, message: 'Cannot update another company' });
+    }
     const company = await Company.findByPk(req.params.id);
 
     if (!company) {
@@ -333,7 +560,7 @@ const updateCompany = async (req, res) => {
       ...(phone !== undefined && { phone }),
       // Only admin can toggle is_active
       ...(is_active !== undefined &&
-        req.user.role === 'admin' && { is_active }),
+        req.isSystemAdministrator && { is_active }),
     });
 
     return res.status(200).json({
@@ -357,6 +584,9 @@ const updateCompany = async (req, res) => {
 // ─────────────────────────────────────────────
 const getCompanyById = async (req, res) => {
   try {
+    if (Number(req.params.id) !== Number(req.user.companyId)) {
+      return res.status(403).json({ success: false, message: 'Cannot access another company' });
+    }
     const company = await Company.findByPk(req.params.id);
 
     if (!company) {
@@ -389,6 +619,9 @@ const getCompanyById = async (req, res) => {
 // @access  admin only
 const createCompanyFinancials = async (req, res) => {
   try {
+    if (!req.isSystemAdministrator) {
+      return res.status(403).json({ success: false, message: 'Only a system administrator can create company financial details' });
+    }
     const company = await Company.findByPk(req.params.id);
     if (!company) {
       return res.status(404).json({ message: 'Company not found' });
@@ -441,6 +674,9 @@ const createCompanyFinancials = async (req, res) => {
 // @access  admin, staff
 const updateCompanyFinancials = async (req, res) => {
   try {
+    if (Number(req.params.companyId) !== Number(req.user.companyId)) {
+      return res.status(403).json({ success: false, message: 'Cannot update another company financial record' });
+    }
     const financials = await CompanyFinancials.findOne({
       where: {
         id: req.params.id,
@@ -496,6 +732,9 @@ const updateCompanyFinancials = async (req, res) => {
 
 const getCompanyFinancials = async (req, res) => {
   try {
+    if (Number(req.params.id) !== Number(req.user.companyId)) {
+      return res.status(403).json({ success: false, message: 'Cannot access another company financial record' });
+    }
     const financials = await CompanyFinancials.findOne({
       where: {
         companyId: req.params.id,
@@ -509,10 +748,18 @@ const getCompanyFinancials = async (req, res) => {
       });
     }
 
+    const data = financials.get({ plain: true });
+    if (!req.permissions?.has('settings.company.view') && !req.isSystemAdministrator) {
+      delete data.bank_name;
+      delete data.bank_account_enc;
+      delete data.ifsc_code;
+      delete data.account_type;
+    }
+
     return res.status(200).json({
       success: true,
       message: 'Company financials fetched successfully',
-      data: financials,
+      data,
     });
   } catch (error) {
     return res.status(500).json({

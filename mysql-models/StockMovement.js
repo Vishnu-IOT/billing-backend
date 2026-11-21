@@ -23,12 +23,16 @@ const StockMovement = sequelize.define(
       allowNull: true,
     },
     movementType: {
-      type: DataTypes.ENUM('SALE', 'PURCHASE', 'TRANSFER_IN', 'TRANSFER_OUT', 'ADJUSTMENT', 'RETURN'),
+      type: DataTypes.ENUM('SALE', 'PURCHASE', 'TRANSFER_IN', 'TRANSFER_OUT', 'ADJUSTMENT', 'RETURN', 'PURCHASE_RETURN'),
       allowNull: false,
     },
     quantity: {
-      type: DataTypes.DECIMAL(10, 2),
+      type: DataTypes.DECIMAL(15, 3),
       allowNull: false,
+    },
+    quantityUnit: {
+      type: DataTypes.ENUM('PCS', 'KG'),
+      allowNull: true,
     },
     referenceType: {
       type: DataTypes.STRING,

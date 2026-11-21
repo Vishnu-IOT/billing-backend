@@ -10,6 +10,11 @@ const InvoiceSettings = require('../mysql-models/Invoice_Settings');
 const AppSettings = require('../mysql-models/AppSettings');
 const sequelize = require('../config/sqldb');
 const { Op } = require('sequelize');
+const {
+  calculateInvoiceItem,
+  calculateInvoiceTotals,
+} = require('../utils/productMargin');
+const { normalizeProductQuantity } = require('../utils/productQuantity');
 
 // Mirrors salesController.js's formatFinancialYear exactly — kept in sync so a
 // converted invoice's number looks identical to a normally-created one.
@@ -48,6 +53,28 @@ function calcDocumentItemRow(item) {
 
   return { price, qty, discountPct, taxPct, discountAmount, afterDiscount, taxAmount, total };
 }
+
+const normalizeDocumentRows = async (items, transaction) => {
+  const rows = [];
+  for (const originalItem of items) {
+    let item = { ...originalItem, quantity: originalItem.quantity ?? 1 };
+    if (item.productId) {
+      const product = await Product.findByPk(item.productId, { transaction });
+      if (product) {
+        const quantity = normalizeProductQuantity(item, product);
+        item = {
+          ...item,
+          quantity: quantity.quantity,
+          unit: product.unitType === 'WEIGHT'
+            ? quantity.quantityUnit
+            : (item.unit || 'pcs'),
+        };
+      }
+    }
+    rows.push({ item, calc: calcDocumentItemRow(item) });
+  }
+  return rows;
+};
 
 // Per-type prefix for the document-number preview below. Not a legally
 // enforced sequence like GST invoices — just a sane, non-colliding default.
@@ -214,7 +241,7 @@ const addDocument = async (req, res) => {
     // from price/quantity/discount/tax, then derive the document totals
     // from that, the same formula the frontend's calcBillTotals() uses
     // (sum of item totals, minus the flat global discount, rounded).
-    const rows = (items || []).map((item) => ({ item, calc: calcDocumentItemRow(item) }));
+    const rows = await normalizeDocumentRows(items || [], transaction);
     const sumAfterDiscount = rows.reduce((s, r) => s + r.calc.afterDiscount, 0);
     const sumTax = rows.reduce((s, r) => s + r.calc.taxAmount, 0);
     const rawTotal = sumAfterDiscount + sumTax;
@@ -260,12 +287,11 @@ const addDocument = async (req, res) => {
       await DocumentItem.bulkCreate(docItems, { transaction });
 
       // stock effect — credit note returns stock, debit note removes it
-      for (const item of items) {
+      for (const { item } of rows) {
         if (!item.productId) continue;
 
         const product = await Product.findByPk(item.productId, { transaction });
         if (!product) continue;
-
         if (normalizedType === 'CREDIT_NOTE') {
           await product.increment('stockQuantity', { by: Number(item.quantity), transaction });
         } else if (normalizedType === 'DEBIT_NOTE') {
@@ -285,7 +311,7 @@ const addDocument = async (req, res) => {
     return res.status(201).json({ success: true, data: doc });
   } catch (error) {
     await transaction.rollback();
-    return res.status(500).json({ message: error.message });
+    return res.status(error.code === 'INVALID_PRODUCT_QUANTITY' ? 400 : 500).json({ message: error.message });
   }
 };
 
@@ -311,7 +337,7 @@ const updateDocument = async (req, res) => {
     const resolvedDiscount = discount ?? req.body.global_discount_amount ?? doc.discount;
 
     // Same server-authoritative recompute as addDocument — see comment there.
-    const rows = items ? items.map((item) => ({ item, calc: calcDocumentItemRow(item) })) : [];
+    const rows = items ? await normalizeDocumentRows(items, transaction) : [];
     const sumAfterDiscount = rows.reduce((s, r) => s + r.calc.afterDiscount, 0);
     const sumTax = rows.reduce((s, r) => s + r.calc.taxAmount, 0);
     const rawTotal = sumAfterDiscount + sumTax;
@@ -387,7 +413,7 @@ const updateDocument = async (req, res) => {
 
       // 2) Apply the NEW items' stock effect, using the (possibly changed) new type
       if (isStockDoc(newNormalizedType)) {
-        for (const item of items) {
+        for (const { item } of rows) {
           if (!item.productId) continue;
           const product = await Product.findByPk(item.productId, { transaction });
           if (!product) continue;
@@ -408,7 +434,7 @@ const updateDocument = async (req, res) => {
     return res.status(200).json({ success: true, message: 'Document updated successfully' });
   } catch (error) {
     await transaction.rollback();
-    return res.status(500).json({ message: error.message });
+    return res.status(error.code === 'INVALID_PRODUCT_QUANTITY' ? 400 : 500).json({ message: error.message });
   }
 };
 
@@ -455,7 +481,7 @@ const deleteDocument = async (req, res) => {
     return res.status(200).json({ success: true, message: 'Document deleted successfully' });
   } catch (error) {
     await transaction.rollback();
-    return res.status(500).json({ message: error.message });
+    return res.status(error.code === 'INVALID_PRODUCT_QUANTITY' ? 400 : 500).json({ message: error.message });
   }
 };
 
@@ -495,33 +521,53 @@ const convertDocumentToInvoice = async (req, res) => {
       );
 
       if (doc.items && doc.items.length > 0) {
+        const lineItems = [];
         for (const item of doc.items) {
           if (!item.productId) continue;
 
           const product = await Product.findByPk(item.productId, { transaction });
           if (!product) continue;
+          const normalizedQuantity = normalizeProductQuantity(item, product);
+          const pricing = calculateInvoiceItem(
+            { ...item, quantity: normalizedQuantity.quantity },
+            product,
+            'purchase'
+          );
+          lineItems.push({ item, product, pricing, normalizedQuantity });
 
           // Receiving goods increases stock — same effect as a normal
           // Purchase Bill creation.
           await Product.update(
-            { stockQuantity: product.stockQuantity + Number(item.quantity) },
+            { stockQuantity: Number(product.stockQuantity || 0) + normalizedQuantity.quantity },
             { where: { id: item.productId }, transaction }
           );
 
-          await PurchaseItem.create(
-            {
+        }
+
+        if (lineItems.length > 0) {
+          const totals = calculateInvoiceTotals(
+            lineItems.map(({ pricing }) => pricing),
+            0,
+            doc.discount
+          );
+          await PurchaseItem.bulkCreate(
+            lineItems.map(({ item, normalizedQuantity }, index) => ({
               purchaseId: newPurchase.id,
               productId: item.productId,
               productName: item.name,
-              quantity: item.quantity,
-              price: item.price,
-              discountPercentage: item.discountPercentage || 0,
-              discountAmount: item.discountAmount || 0,
-              baseRate: item.price,
-              taxPercentage: item.tax || 0,
-              taxAmount: (Number(item.price) * Number(item.quantity) * (item.tax || 0)) / 100,
-              netRate: item.total,
+              quantity: normalizedQuantity.quantity,
+              quantityUnit: normalizedQuantity.quantityUnit,
+              ...totals.items[index],
               batchNo: item.batchNumber || null,
+            })),
+            { transaction }
+          );
+          await newPurchase.update(
+            {
+              baseRate: totals.baseRate,
+              tax: totals.tax,
+              global_discount_amount: totals.globalDiscountAmount,
+              totalAmount: totals.totalAmount,
             },
             { transaction }
           );
@@ -580,29 +626,56 @@ const convertDocumentToInvoice = async (req, res) => {
     await invoiceSettings.update({ next_sequence_no: sequenceNumber + 1 }, { transaction });
 
     if (doc.items && doc.items.length > 0) {
+      const lineItems = [];
       for (const item of doc.items) {
-        if (item.productId) {
-          const product = await Product.findByPk(item.productId, { transaction });
-          if (product) {
-            // Converting to a Sale means the goods are now being sold —
-            // decrement stock the same way a normal invoice creation does
-            // (no floor — matches the intentional backorder/negative-stock
-            // behavior elsewhere in this app).
-            await product.update(
-              { stockQuantity: product.stockQuantity - Number(item.quantity) },
-              { transaction }
-            );
-          }
-        }
-      }
+        if (!item.productId) continue;
+        const product = await Product.findByPk(item.productId, { transaction });
+        if (!product) continue;
+        const normalizedQuantity = normalizeProductQuantity(item, product);
+        lineItems.push({
+          item,
+          product,
+          normalizedQuantity,
+          pricing: calculateInvoiceItem(
+            { ...item, quantity: normalizedQuantity.quantity },
+            product,
+            'sale'
+          ),
+        });
 
-      const saleItems = doc.items.map((item) => ({
-        saleId: newSale.id, productId: item.productId, productName: item.name,
-        quantity: item.quantity, price: item.price,
-        taxAmount: (item.price * item.quantity * (item.tax || 0)) / 100,
-        netRate: item.total,
-      }));
-      await SalesItem.bulkCreate(saleItems, { transaction });
+        // Keep document conversion stock effects consistent with regular sales.
+        await product.update(
+          {
+            stockQuantity: Number(product.stockQuantity || 0) - normalizedQuantity.quantity,
+          },
+          { transaction }
+        );
+      }
+      if (lineItems.length > 0) {
+        const totals = calculateInvoiceTotals(
+          lineItems.map(({ pricing }) => pricing),
+          0,
+          doc.discount
+        );
+        const saleItems = lineItems.map(({ item, normalizedQuantity }, index) => ({
+          saleId: newSale.id,
+          productId: item.productId,
+          productName: item.name,
+          quantity: normalizedQuantity.quantity,
+          quantityUnit: normalizedQuantity.quantityUnit,
+          ...totals.items[index],
+        }));
+        await SalesItem.bulkCreate(saleItems, { transaction });
+        await newSale.update(
+          {
+            baseRate: totals.baseRate,
+            tax: totals.tax,
+            global_discount_amount: totals.globalDiscountAmount,
+            totalAmount: totals.totalAmount,
+          },
+          { transaction }
+        );
+      }
     }
 
     await doc.update({ status: 'converted', convertedInvoiceId: newSale.id }, { transaction });

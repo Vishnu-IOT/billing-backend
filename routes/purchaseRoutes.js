@@ -18,13 +18,14 @@ const {
   deletePurchase,
   updatePurchaseById,
 } = require('../mysql-controllers/purchaseController');
+const { authenticateLoyaltyUser } = require('../middleware/loyaltyAuth');
 
-router.post('/add-purchase', createPurchase);
+router.post('/add-purchase', authenticateLoyaltyUser, createPurchase);
 router.get('/get-purchase', getPurchase);
 router.get('/get-purchase-date', getPurchaseInvoicesByDate);
 router.get('/get-purchase/:id', getPurchaseById);
 router.delete('/delete-purchase/:id', deletePurchase);
-router.put('/updatebyid-purchase/:id', updatePurchaseById);
+router.put('/updatebyid-purchase/:id', authenticateLoyaltyUser, updatePurchaseById);
 router.post('/updatepaymentout-purchase/:id', updatePaymentStatusById);
 router.get('/payments-purchase/:id', getPaymentHistoryByPurchase);
 
