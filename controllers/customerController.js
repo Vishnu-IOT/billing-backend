@@ -6,7 +6,7 @@ const Customer = require('../models/Customer');
 // @access  Public (Adjust as needed for authentication)
 const getCustomers = async (req, res) => {
   try {
-    await connectDB();
+    // await connectDB();
     const customers = await Customer.find();
     return res.status(200).json(customers);
   } catch (error) {
@@ -19,7 +19,7 @@ const getCustomers = async (req, res) => {
 // @access  Public
 const getCustomerById = async (req, res) => {
   try {
-    await connectDB();
+    // await connectDB();
     const customer = await Customer.findById(req.params.id);
     if (!customer) {
       return res.status(404).json({ message: 'Customer not found' });
@@ -35,7 +35,7 @@ const getCustomerById = async (req, res) => {
 // @access  Public
 const createCustomer = async (req, res) => {
   try {
-    await connectDB();
+    // await connectDB();
     const { name, GST, email, phone, address } = req.body;
 
     const customerExists = await Customer.findOne({ email });
@@ -62,7 +62,7 @@ const createCustomer = async (req, res) => {
 // @access  Public
 const updateCustomer = async (req, res) => {
   try {
-    await connectDB();
+    // await connectDB();
     const customer = await Customer.findById(req.params.id);
 
     if (!customer) {
@@ -86,7 +86,7 @@ const updateCustomer = async (req, res) => {
 // @access  Public
 const deleteCustomer = async (req, res) => {
   try {
-    await connectDB();
+    // await connectDB();
     const customer = await Customer.findById(req.params.id);
 
     if (!customer) {

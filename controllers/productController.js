@@ -33,7 +33,7 @@ const getProductById = async (req, res) => {
 // @access  Public
 const createProduct = async (req, res) => {
   try {
-    await connectDB();
+    // await connectDB();
     const {
       name,
       HSNCode,
@@ -71,7 +71,7 @@ const createProduct = async (req, res) => {
 // @access  Public
 const updateProduct = async (req, res) => {
   try {
-    await connectDB();
+    // await connectDB();
     const product = await Product.findById(req.params.id);
 
     if (!product) {
@@ -95,7 +95,7 @@ const updateProduct = async (req, res) => {
 // @access  Public
 const deleteProduct = async (req, res) => {
   try {
-    await connectDB();
+    // await connectDB();
     const product = await Product.findById(req.params.id);
 
     if (!product) {

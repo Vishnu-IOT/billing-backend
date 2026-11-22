@@ -2,25 +2,35 @@ const { Sequelize } = require("sequelize");
 require("dotenv").config();
 
 const sequelize = new Sequelize(
-  process.env.MYSQL_DATABASE,  // database name
-  process.env.MYSQLUSER,       // username
+  process.env.MYSQL_DATABASE, // database name
+  process.env.MYSQLUSER, // username
   process.env.MYSQL_ROOT_PASSWORD, // password
   {
     host: process.env.MYSQLHOST,
     port: process.env.MYSQLPORT,
     dialect: "mysql",
     timezone: "+05:30", // India timezone
-    logging: false
-  }
+
+    pool: {
+      max: 5,
+      min: 0,
+      acquire: 30000,
+      idle: 10000,
+      evict: 1000,
+    },
+
+    logging: false,
+  },
 );
 
-const { runMigrations } = require('./migrations');
+// const { runMigrations } = require("./migrations");
 
-sequelize.authenticate()
+sequelize
+  .authenticate()
   .then(async () => {
     console.log("Connected to MySQL Database using Sequelize");
     // Step 1: Run safe column migrations (IF NOT EXISTS - idempotent)
-    await runMigrations(sequelize);
+    // await runMigrations(sequelize);
     console.log("Database connection ready.");
   })
   .catch((err) => {

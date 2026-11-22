@@ -6,7 +6,7 @@ const Category = require('../models/Category');
 // @access  Public
 const addCategory = async (req, res) => {
   try {
-    await connectDB();
+    // await connectDB();
 
     const { category } = req.body;
     const categorys = await Category.create({ category });
@@ -29,7 +29,7 @@ const addCategory = async (req, res) => {
 // @access  Public
 const getCategory = async (req, res) => {
   try {
-    await connectDB();
+    // await connectDB();
     const products = await Category.find().select('_id category');
     return res.status(200).json(products); //{cat: { id: products._id, name: products.category }}
   } catch (error) {
